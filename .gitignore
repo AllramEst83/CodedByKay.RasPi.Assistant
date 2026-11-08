@@ -1,0 +1,16 @@
+# Secrets
+.env
+*.pem
+*.ppn
+
+# Python / Pi runtime artefacts (installed or generated on the Pi)
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+models/
+src/tests/fixtures/
+
+# Local tooling state
+.claude/settings.local.json
+_bmad/render/

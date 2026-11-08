@@ -1,0 +1,53 @@
+- id: "1"
+  title: Reflash the Pi and connect over SSH
+  description: >-
+    Reset the Pi 5 to a clean Raspberry Pi OS Lite 64-bit and reach it from
+    the Windows PC over SSH (CAP-7, CAP-8); follow pi-setup.md.
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Guidance and verification only: Kay performs the flash and PuTTY
+    connection physically. Confirm hostname, username and aarch64 before
+    finishing.
+- id: "2"
+  title: Verify USB audio capture and playback
+  description: >-
+    Confirm the chosen USB mic and speaker are recognised by ALSA, capture
+    mono 16 kHz audio and play back audibly; prerequisite for CAP-3.
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Use arecord/aplay/alsamixer per pi-setup.md; record the working card
+    and device numbers for the assistant config.
+- id: "3"
+  title: Local wake-word detection with Vosk
+  description: >-
+    Detect "Hey Gemini" or "Hey Assistant" locally with Vosk and a phrase
+    grammar, with no network audio while idle (CAP-1).
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Model is already at models/vosk-model-small-en-us-0.15 on the Pi. Use a
+    restricted grammar; measure idle CPU and false triggers once the mic
+    is available. No vendor accounts.
+- id: "4"
+  title: Chime and Gemini Live spoken conversation
+  description: >-
+    On wake word play the generated chime, then open a Gemini Live session
+    with 16 kHz in and 24 kHz out and the Swedish-default, short-reply
+    persona (CAP-2, CAP-3, CAP-6).
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Verify every google-genai call and the model name in stack.md against
+    the current SDK before coding; docs/plan.md section 5 is a reference,
+    not a source of truth.
+- id: "5"
+  title: Barge-in, follow-ups and 8 s auto-sleep
+  description: >-
+    Support interrupting a reply, follow-ups without the wake word, and
+    return to idle after 8 s without speech from either party (CAP-4,
+    CAP-5).
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Reset the idle timer on user speech as well as model audio; the
+    timeout stays a single configurable constant.
