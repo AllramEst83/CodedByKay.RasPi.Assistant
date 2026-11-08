@@ -41,7 +41,7 @@ A vision to realize: Kay wants a hands-free, voice-only Gemini assistant on a Ra
 
 ## Constraints
 
-- Audio hardware is required: the Pi 5 has no 3.5 mm jack and no mic, so a USB mic and a USB/HDMI/Bluetooth speaker (or USB headset/audio HAT) must be chosen; the source plan omits this.
+- Audio hardware is required: the Pi 5 has no 3.5 mm jack and no mic, so a USB mic and a wired speaker (USB speakerphone, USB headset, or a 3.5 mm speaker via a USB sound adapter) must be chosen; Bluetooth is out of scope for now; the source plan omits this.
 - Power is the official Raspberry Pi 27 W USB-C supply (EU, 5.1 V/5 A, confirmed by photo); keep it, since weaker supplies limit USB current to audio devices.
 - No third-party account or vendor key for wake-word detection: it runs on-device with Vosk and a local model, restricted to a small phrase grammar. Phrase words must exist in the model vocabulary ("gemini", "assistant" do; "gimini" does not).
 - Wake-word detection must leave the Pi fast enough to respond; Vosk uses more CPU than a dedicated engine, so idle CPU must be measured.
