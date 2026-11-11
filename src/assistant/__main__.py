@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.remote_audio:  # the PC bridge supplies the mic; logs go back over stderr
             app.wake_test(StdioMic(), detector, make_logger(sys.stderr, color=True), args.minutes)
         else:
-            mic = PyAudioMic(cfg.audio_in_device)
+            mic = PyAudioMic(cfg.audio_in_device, log)
             log(f"[Status] Microphone: {mic.device_name} ({mic._rate} Hz)")
             try:
                 app.wake_test(mic, detector, log, args.minutes)
@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.simulate:
         mic = FakeMic(read_wav_pcm16(args.simulate, INPUT_RATE))
         if args.play:  # real speaker, so the reply can be heard; nothing is saved
-            speaker = PyAudioSpeaker(cfg.audio_out_device)
+            speaker = PyAudioSpeaker(cfg.audio_out_device, log)
             try:
                 timers = TimerManager(speaker, cfg)
                 app.run_once(cfg, mic, speaker, detector, factory, timers=timers)
@@ -101,8 +101,8 @@ def main(argv: list[str] | None = None) -> int:
             speaker.close()
         return 0
 
-    mic = PyAudioMic(cfg.audio_in_device)
-    speaker = PyAudioSpeaker(cfg.audio_out_device)
+    mic = PyAudioMic(cfg.audio_in_device, log)
+    speaker = PyAudioSpeaker(cfg.audio_out_device, log)
     log(f"[Status] Microphone: {mic.device_name} ({mic._rate} Hz)")
     log(f"[Status] Speaker:    {speaker.device_name} ({speaker._rate} Hz)")
     try:

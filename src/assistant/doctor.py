@@ -9,6 +9,7 @@ import asyncio
 import shutil
 import socket
 import stat
+import subprocess
 import time
 from pathlib import Path
 from typing import Callable
@@ -68,10 +69,26 @@ def check_network() -> Result:
     return PASS, f"{host} reachable ({(time.monotonic() - t0) * 1000:.0f} ms)"
 
 
+def check_service() -> Result:
+    """The service keeps the mic and speaker open, so while it runs they can look missing or busy to everything else."""
+    try:
+        state = subprocess.run(["systemctl", "is-active", "gemini-assistant"], capture_output=True, text=True,
+                               timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return PASS, "no gemini-assistant service on this machine"
+    if state == "active":
+        return WARN, ("the gemini-assistant service is running and holds the mic and speaker open, so the audio "
+                      "checks below may fail or miss devices. Stop it first: sudo systemctl stop gemini-assistant")
+    return PASS, f"service is {state or 'not installed'}"
+
+
 def check_devices() -> Result:
     import pyaudio
 
-    pa = pyaudio.PyAudio()
+    from .audio import quiet_stderr
+
+    with quiet_stderr():
+        pa = pyaudio.PyAudio()
     try:
         ins, outs = [], []
         for i in range(pa.get_device_count()):
@@ -167,6 +184,8 @@ def run_doctor(cfg: Config, log: Callable[[str], None] = default_log, skip_audio
         ("Spoken messages", lambda: check_espeak(cfg)),
         ("Network", check_network),
     ]
+    if not skip_audio:
+        checks.append(("Service", check_service))
     if not skip_audio:
         checks += [("Audio devices", check_devices), ("Microphone", lambda: check_mic(cfg)),
                    ("Speaker", lambda: check_speaker(cfg))]

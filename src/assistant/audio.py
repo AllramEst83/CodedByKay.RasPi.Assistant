@@ -5,7 +5,9 @@ Speaker: write(pcm), clear() (barge-in), is_busy(), play_blocking(pcm), close()
 """
 from __future__ import annotations
 
+import contextlib
 import math
+import os
 import queue
 import struct
 import threading
@@ -14,6 +16,32 @@ import wave
 from array import array
 
 from .config import FRAME_MS, INPUT_FRAME_BYTES, INPUT_RATE, OUTPUT_RATE
+
+
+@contextlib.contextmanager
+def quiet_stderr():
+    """Silence the C libraries' stderr chatter (ALSA, JACK and PortAudio probe messages) while audio devices are opened."""
+    try:
+        saved, null = os.dup(2), os.open(os.devnull, os.O_WRONLY)
+    except OSError:
+        yield
+        return
+    try:
+        os.dup2(null, 2)
+        yield
+    finally:
+        os.dup2(saved, 2)
+        os.close(saved)
+        os.close(null)
+
+
+def _close_quietly(stream, pa) -> None:
+    for fn in (getattr(stream, "stop_stream", None), getattr(stream, "close", None), getattr(pa, "terminate", None)):
+        try:
+            if fn:
+                fn()
+        except Exception:  # noqa: BLE001  the device may already be gone
+            pass
 
 
 def _rms_bytes(pcm: bytes) -> float:
@@ -106,7 +134,8 @@ def _choose_device(pa, spec: str | None, want_input: bool) -> tuple[int | None, 
 def list_devices() -> str:
     import pyaudio
 
-    pa = pyaudio.PyAudio()
+    with quiet_stderr():
+        pa = pyaudio.PyAudio()
     try:
         lines = []
         for i in range(pa.get_device_count()):
@@ -177,17 +206,52 @@ def _open_stream(pa, want_rate: int, device_index: int | None, is_input: bool, f
 
 
 class PyAudioMic:
-    """Reads 16 kHz mono frames, converting from whatever rate and channel count the device needs."""
+    """Reads 16 kHz mono frames, converting from whatever rate and channel count the device needs.
 
-    def __init__(self, device: str | None = None):
-        self._pa = pyaudio_mod().PyAudio()
+    If the device disappears (unplugged, USB hiccup) the mic notices, returns silence at real-time pace so the app
+    stays alive and idle, and reopens the device as soon as it is back. Two signs of a lost device: a read error, or
+    frames arriving much faster than real time (a dead handle that returns at once).
+    """
+
+    WINDOW = 25  # frames (1 s of audio) per pacing check
+
+    def __init__(self, device: str | None = None, log=None):
+        self._device = device
+        self._log = log or (lambda line: None)
         self._chunk = INPUT_FRAME_BYTES // 2
-        index, self.device_name = _choose_device(self._pa, device, True)
-        self._stream, self._rate, self._channels = _open_stream(self._pa, INPUT_RATE, index, True, self._chunk)
-        self._native_chunk = self._chunk * self._rate // INPUT_RATE
+        self._dead = False
+        self._next_try = 0.0
+        self._waiting_logged = False
+        self._open()
+
+    def _open(self) -> None:
+        with quiet_stderr():
+            pa = pyaudio_mod().PyAudio()
+            try:
+                index, name = _choose_device(pa, self._device, True)
+                stream, rate, channels = _open_stream(pa, INPUT_RATE, index, True, self._chunk)
+            except Exception:
+                pa.terminate()
+                raise
+        self._pa, self._stream, self._rate, self._channels, self.device_name = pa, stream, rate, channels, name
+        self._native_chunk = self._chunk * rate // INPUT_RATE
+        self._win_start, self._win_frames, self._fast = time.monotonic(), 0, 0
 
     def read(self) -> bytes:
-        data = self._stream.read(self._native_chunk, exception_on_overflow=False)
+        if self._dead:
+            return self._silence_and_retry()
+        try:
+            data = self._stream.read(self._native_chunk, exception_on_overflow=False)
+        except (OSError, ValueError) as e:
+            return self._lost(f"read failed: {e}")
+        # a healthy stream blocks about 40 ms per frame; many frames in far less time mean the handle is dead
+        self._win_frames += 1
+        if self._win_frames >= self.WINDOW:
+            now = time.monotonic()
+            self._fast = self._fast + 1 if now - self._win_start < 0.5 * self.WINDOW * 0.04 else 0
+            self._win_start, self._win_frames = now, 0
+            if self._fast >= 2:
+                return self._lost("audio arriving faster than real time")
         if self._channels == 2:  # keep the left channel
             a = array("h")
             a.frombytes(data)
@@ -195,29 +259,65 @@ class PyAudioMic:
         data = resample_pcm16(data, self._rate, INPUT_RATE)
         return data.ljust(INPUT_FRAME_BYTES, b"\x00")[:INPUT_FRAME_BYTES]  # exactly one frame
 
+    def _lost(self, why: str) -> bytes:
+        self._log(f"[Warn] Microphone lost ({why}); waiting for it to come back")
+        _close_quietly(self._stream, self._pa)
+        self._dead, self._next_try, self._waiting_logged = True, time.monotonic() + 0.5, False
+        return self._silence_and_retry()
+
+    def _silence_and_retry(self) -> bytes:
+        time.sleep(0.04)  # keep the real-time pace so nothing spins
+        if time.monotonic() >= self._next_try:
+            try:
+                self._open()
+            except Exception as e:  # noqa: BLE001
+                self._next_try = time.monotonic() + 1.0
+                if not self._waiting_logged:
+                    self._log(f"[Warn] Microphone not available yet ({e}); retrying every second")
+                    self._waiting_logged = True
+            else:
+                self._dead = False
+                self._log(f"[Status] Microphone reconnected: {self.device_name} ({self._rate} Hz)")
+        return bytes(INPUT_FRAME_BYTES)
+
     def close(self) -> None:
-        self._stream.stop_stream()
-        self._stream.close()
-        self._pa.terminate()
+        _close_quietly(self._stream, self._pa)
 
 
 class PyAudioSpeaker:
     """Plays queued 24 kHz mono PCM in 50 ms pieces so clear() can cut playback quickly.
 
-    The device may run at another rate or as stereo; conversion happens in write().
+    The device may run at another rate or as stereo; conversion happens in write(). If the device disappears, the
+    queue is dropped and the device is reopened when it is back (the app keeps running).
     """
 
     playback_delay = 0.05  # seconds between writing a piece and hearing it (the device buffer)
+    REOPEN_SECONDS = 30  # how long to wait for a lost device before giving up on the audio that was queued
 
-    def __init__(self, device: str | None = None):
-        self._pa = pyaudio_mod().PyAudio()
-        index, self.device_name = _choose_device(self._pa, device, False)
-        self._stream, self._rate, self._channels = _open_stream(self._pa, OUTPUT_RATE, index, False)
+    def __init__(self, device: str | None = None, log=None):
+        self._device = device
+        self._log = log or (lambda line: None)
+        self._open_device()
         self._start_worker()
 
-    def _start_worker(self) -> None:
+    def _open_device(self) -> None:
+        with quiet_stderr():
+            pa = pyaudio_mod().PyAudio()
+            try:
+                index, name = _choose_device(pa, self._device, False)
+                stream, rate, channels = _open_stream(pa, OUTPUT_RATE, index, False)
+            except Exception:
+                pa.terminate()
+                raise
+        self._pa, self._stream, self._rate, self._channels, self.device_name = pa, stream, rate, channels, name
+        self._set_piece()
+
+    def _set_piece(self) -> None:
         self._piece = self._rate * 2 * self._channels * 50 // 1000  # bytes in 50 ms of device audio
         self._piece -= self._piece % (2 * self._channels)
+
+    def _start_worker(self) -> None:
+        self._set_piece()
         self._q: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
         self._gen = 0
@@ -256,10 +356,31 @@ class PyAudioSpeaker:
                     if gen != self._gen:
                         break
                 self._level, self._level_at = _rms_bytes(piece), time.monotonic()
-                self._stream.write(piece)
+                try:
+                    self._stream.write(piece)
+                except (OSError, ValueError):
+                    self.clear()  # nothing can be played now; do not leave is_busy() stuck
+                    self._reopen()
+                    break
                 with self._lock:
                     if gen == self._gen:
                         self._pending -= len(piece)
+
+    def _reopen(self) -> bool:
+        """After a write failure: wait for the device to come back and reopen it. Returns whether it did."""
+        self._log("[Warn] Speaker lost; waiting for it to come back")
+        _close_quietly(self._stream, self._pa)
+        deadline = time.monotonic() + self.REOPEN_SECONDS
+        while not self._closed and time.monotonic() < deadline:
+            try:
+                self._open_device()
+            except Exception:  # noqa: BLE001
+                time.sleep(1.0)
+                continue
+            self._log(f"[Status] Speaker reconnected: {self.device_name} ({self._rate} Hz)")
+            return True
+        self.clear()  # gave up: drop whatever was queued meanwhile
+        return False
 
     def clear(self) -> None:
         with self._lock:
@@ -287,9 +408,7 @@ class PyAudioSpeaker:
 
     def close(self) -> None:
         self._closed = True
-        self._stream.stop_stream()
-        self._stream.close()
-        self._pa.terminate()
+        _close_quietly(self._stream, self._pa)
 
 
 class StdioMic:
@@ -355,6 +474,10 @@ class StdioSpeaker(PyAudioSpeaker):
         self._rate, self._channels = OUTPUT_RATE, 1
         self._stream = _PacedSink(out or sys.stdout.buffer, OUTPUT_RATE)
         self._start_worker()
+
+    def _reopen(self) -> bool:
+        self.clear()  # a broken pipe means the PC bridge went away: there is nothing to reopen
+        return False
 
 
 class FakeMic:
