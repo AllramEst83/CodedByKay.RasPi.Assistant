@@ -96,13 +96,13 @@ def tone_pattern(kind: str, rate: int = OUTPUT_RATE) -> bytes:
     return bytes(out)
 
 
-def speak(text: str, lang: str = "sv", rate: int = OUTPUT_RATE) -> bytes | None:
-    """Render text with espeak-ng to 24 kHz PCM, or None if espeak-ng is missing or fails."""
+def speak(text: str, lang: str = "sv", rate: int = OUTPUT_RATE, speed: int = 150) -> bytes | None:
+    """Render text with espeak-ng to 24 kHz PCM (speed in words per minute), or None if espeak-ng is missing or fails."""
     exe = shutil.which("espeak-ng")
     if not exe:
         return None
     try:
-        wav = subprocess.run([exe, "-v", f"{lang}+f3", "-s", "150", "--stdout", text],  # f3 = female variant
+        wav = subprocess.run([exe, "-v", f"{lang}+f3", "-s", str(speed), "--stdout", text],  # f3 = female variant
                              capture_output=True, timeout=10, check=True).stdout
         with wave.open(io.BytesIO(wav), "rb") as w:
             src_rate, pcm = w.getframerate(), w.readframes(w.getnframes())
@@ -123,16 +123,16 @@ def _trim_silence(pcm: bytes, rate: int, threshold: int = 400, pad_ms: int = 30)
 
 
 @lru_cache(maxsize=32)
-def speak_cached(text: str, lang: str) -> bytes | None:
-    """speak() remembered per (text, language), so a greeting is rendered once and then plays instantly."""
-    return speak(text, lang)
+def speak_cached(text: str, lang: str, speed: int = 150) -> bytes | None:
+    """speak() remembered per (text, language, speed), so a greeting is rendered once and then plays instantly."""
+    return speak(text, lang, speed=speed)
 
 
 def greeting_audio(cfg, phrase: str) -> bytes | None:
     """The spoken greeting for the wake phrase that was heard, or None (no text set, unknown phrase, or no espeak-ng)."""
     lang = cfg.greeting_map.get(phrase.lower())
     text = cfg.greetings.get(lang, "") if lang else ""
-    return speak_cached(text, lang) if text else None
+    return speak_cached(text, lang, cfg.greeting_speed) if text else None
 
 
 def prewarm_greetings(cfg) -> None:

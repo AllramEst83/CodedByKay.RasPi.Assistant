@@ -57,14 +57,14 @@ def test_resample_changes_length_proportionally():
 
 
 def test_announce_plays_tone_even_without_espeak(monkeypatch):
-    monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000: None)
+    monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000, speed=150: None)
     speaker = FakeSpeaker()
     feedback.announce("credits", speaker, "sv", True, log=lambda s: None)
     assert len(speaker.audio) == len(feedback.tone_pattern("credits"))
 
 
 def test_announce_speaks_after_tone_when_voice_available(monkeypatch):
-    monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000: b"\x07\x00" * 100)
+    monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000, speed=150: b"\x07\x00" * 100)
     speaker = FakeSpeaker()
     feedback.announce("auth", speaker, "en", True, log=lambda s: None)
     assert len(speaker.audio) == len(feedback.tone_pattern("auth")) + 200
@@ -110,7 +110,7 @@ def _cfg(**kw):
 @pytest.fixture
 def fake_espeak(monkeypatch):
     feedback.speak_cached.cache_clear()
-    monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000: f"{lang}:{text}".encode())
+    monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000, speed=150: f"{lang}:{text}".encode())
     yield
     feedback.speak_cached.cache_clear()
 
@@ -136,7 +136,7 @@ def test_default_greeting_is_online_for_both_wake_phrases(fake_espeak):
 
 def test_greeting_is_none_without_espeak(monkeypatch):
     feedback.speak_cached.cache_clear()
-    monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000: None)
+    monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000, speed=150: None)
     assert feedback.greeting_audio(_cfg(), "hey gemini") is None
     feedback.speak_cached.cache_clear()
 
@@ -144,7 +144,7 @@ def test_greeting_is_none_without_espeak(monkeypatch):
 def test_greeting_is_rendered_once(monkeypatch):
     feedback.speak_cached.cache_clear()
     calls = []
-    monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000: calls.append(text) or b"x")
+    monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000, speed=150: calls.append(text) or b"x")
     for _ in range(3):
         feedback.greeting_audio(_cfg(), "hey gemini")
     assert calls == ["Online"]

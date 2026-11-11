@@ -53,6 +53,7 @@ class Config:
     # Keep it to one short word: it should end inside the wake_skip_ms window.
     greetings: dict = field(default_factory=lambda: {"sv": "Ja?", "en": "Online"})
     greeting_map: dict = field(default_factory=lambda: {"hey gemini": "en", "hey assistant": "en"})  # phrase -> language
+    greeting_speed: int = 115  # espeak words per minute for the greeting (error messages use 150); lower = slower
     feedback_lang: str = "sv"  # language of spoken error messages: sv or en
     error_voice: bool = True  # speak error messages (needs espeak-ng); tones always play
     system_prompt: str = SYSTEM_PROMPT
@@ -94,6 +95,7 @@ def load_config(env_path: str | Path | None = None) -> Config:
         greetings={"sv": os.getenv("GREETING_SV", "Ja?").strip(),
                    "en": os.getenv("GREETING_EN", "Online").strip()},
         greeting_map=_parse_map(os.getenv("GREETING_MAP", "hey gemini:en,hey assistant:en")),
+        greeting_speed=int(os.getenv("GREETING_SPEED", "115")),
         feedback_lang=os.getenv("FEEDBACK_LANG", "sv").lower(),
         error_voice=os.getenv("ERROR_VOICE", "true").lower() in ("1", "true", "yes"),
     )
