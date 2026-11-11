@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from array import array
 from typing import Any, Callable
 
 from google import genai
@@ -26,6 +27,15 @@ def build_live_config(cfg: Config) -> types.LiveConnectConfig:
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
     )
+
+
+def _rms(pcm: bytes) -> float:
+    """Root-mean-square level of 16-bit little-endian mono PCM."""
+    samples = array("h")
+    samples.frombytes(pcm[: len(pcm) // 2 * 2])
+    if not samples:
+        return 0.0
+    return (sum(s * s for s in samples) / len(samples)) ** 0.5
 
 
 class IdleTimer:
@@ -90,7 +100,7 @@ class LiveConversation:
             async with client.aio.live.connect(model=self.cfg.model, config=build_live_config(self.cfg)) as session:
                 self.log("[Status] Live session open")
                 tasks = [
-                    asyncio.create_task(self._send(session, audio_q)),
+                    asyncio.create_task(self._send(session, audio_q, timer)),
                     asyncio.create_task(self._receive(session, timer)),
                     asyncio.create_task(self._monitor(timer)),
                 ]
@@ -112,11 +122,13 @@ class LiveConversation:
         self.log(f"[Status] Live session closed ({reason})")
         return reason
 
-    async def _send(self, session, audio_q: asyncio.Queue) -> str:
+    async def _send(self, session, audio_q: asyncio.Queue, timer: IdleTimer) -> str:
         while True:
             data = await audio_q.get()
             if self.cfg.mute_mic_while_speaking and self.speaker.is_busy():
                 data = bytes(len(data))  # keep the stream flowing but silent
+            elif _rms(data) > self.cfg.speech_rms:
+                timer.touch()  # local voice check: Gemini's transcript arrives too late to hold the timer open
             await session.send_realtime_input(
                 audio=types.Blob(data=data, mime_type=f"audio/pcm;rate={INPUT_RATE}")
             )

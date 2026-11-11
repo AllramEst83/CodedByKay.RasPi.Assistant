@@ -39,6 +39,7 @@ class Config:
     audio_in_device: str | None = None  # index or name substring
     audio_out_device: str | None = None
     mute_mic_while_speaking: bool = False  # set True if the speaker echoes into the mic
+    speech_rms: float = 500.0  # mic level (16-bit RMS) counted as speech for the idle timer; raise if room noise keeps sessions open
     system_prompt: str = SYSTEM_PROMPT
 
 
@@ -65,4 +66,5 @@ def load_config(env_path: str | Path | None = None) -> Config:
         audio_in_device=os.getenv("AUDIO_IN_DEVICE") or None,
         audio_out_device=os.getenv("AUDIO_OUT_DEVICE") or None,
         mute_mic_while_speaking=os.getenv("MUTE_MIC_WHILE_SPEAKING", "").lower() in ("1", "true", "yes"),
+        speech_rms=float(os.getenv("SPEECH_RMS", "500")),
     )
