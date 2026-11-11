@@ -97,6 +97,27 @@ def test_mic_notices_a_dead_handle_that_returns_instantly(monkeypatch):
     assert time.monotonic() - t0 > 1.0  # and it no longer spins: it waits at the real-time pace while the device is gone
 
 
+def test_mic_recovers_when_the_stream_stalls_and_never_returns(monkeypatch):
+    """A USB re-enumeration leaves a blocking read hanging forever: no error, no frames."""
+    import threading
+
+    block = threading.Event()
+    stalled = FakeStream(on_read=lambda frames: block.wait(30) or bytes(frames * 2))
+    state = install_fake_audio(monkeypatch, [stalled, FakeStream(on_read=healthy)])
+    monkeypatch.setattr(audio.PyAudioMic, "STALL_SECONDS", 0.3)
+    logs = []
+    mic = audio.PyAudioMic(log=logs.append)
+    start = time.monotonic()
+    frames = []
+    while time.monotonic() - start < 3 and not any("reconnected" in line for line in logs):
+        frames.append(mic.read())
+    block.set()  # let the abandoned reader thread end
+    assert any("Microphone lost" in line and "no audio" in line for line in logs)
+    assert any("reconnected" in line for line in logs) and state.opened == 2
+    assert all(len(f) == INPUT_FRAME_BYTES for f in frames)
+    assert len(mic.read()) == INPUT_FRAME_BYTES
+
+
 def test_mic_keeps_retrying_while_the_device_is_missing(monkeypatch):
     broken = FakeStream(lambda frames: (_ for _ in ()).throw(OSError("gone")))
     state = install_fake_audio(monkeypatch, [broken] + [OSError("no device")] * 8 + [FakeStream(healthy)])

@@ -210,10 +210,13 @@ class PyAudioMic:
 
     If the device disappears (unplugged, USB hiccup) the mic notices, returns silence at real-time pace so the app
     stays alive and idle, and reopens the device as soon as it is back. Two signs of a lost device: a read error, or
-    frames arriving much faster than real time (a dead handle that returns at once).
+    frames arriving much faster than real time (a dead handle that returns at once). A third: the stream stalls and
+    never returns (the USB device re-enumerated under it), which a blocking read cannot report, so the reads happen
+    in a helper thread and read() gives up on it after STALL_SECONDS.
     """
 
     WINDOW = 25  # frames (1 s of audio) per pacing check
+    STALL_SECONDS = 1.5  # no frame for this long: the stream is dead
 
     def __init__(self, device: str | None = None, log=None):
         self._device = device
@@ -236,14 +239,49 @@ class PyAudioMic:
         self._pa, self._stream, self._rate, self._channels, self.device_name = pa, stream, rate, channels, name
         self._native_chunk = self._chunk * rate // INPUT_RATE
         self._win_start, self._win_frames, self._fast = time.monotonic(), 0, 0
+        self._start_reader()
+
+    def _start_reader(self) -> None:
+        self._gen = getattr(self, "_gen", 0) + 1
+        gen, stream, n = self._gen, self._stream, self._native_chunk
+        q: queue.Queue = queue.Queue(maxsize=10)  # a short backlog; the oldest frame is dropped if the consumer lags
+        self._q = q
+
+        def offer(item) -> None:
+            try:
+                q.put_nowait(item)
+            except queue.Full:
+                try:
+                    q.get_nowait()
+                    q.put_nowait(item)
+                except (queue.Empty, queue.Full):
+                    pass
+
+        def run() -> None:
+            while self._gen == gen:
+                try:
+                    data = stream.read(n, exception_on_overflow=False)
+                except Exception as e:  # noqa: BLE001
+                    offer(e)
+                    return
+                offer(data)
+
+        threading.Thread(target=run, daemon=True, name="mic-reader").start()
+
+    def _abandon_stream(self) -> None:
+        """Stop using the current stream. Closing runs in the background: a stalled device can block the close too."""
+        self._gen += 1
+        threading.Thread(target=_close_quietly, args=(self._stream, self._pa), daemon=True).start()
 
     def read(self) -> bytes:
         if self._dead:
             return self._silence_and_retry()
         try:
-            data = self._stream.read(self._native_chunk, exception_on_overflow=False)
-        except (OSError, ValueError) as e:
-            return self._lost(f"read failed: {e}")
+            data = self._q.get(timeout=self.STALL_SECONDS)
+        except queue.Empty:
+            return self._lost(f"no audio for {self.STALL_SECONDS:g} s")
+        if isinstance(data, Exception):
+            return self._lost(f"read failed: {data}")
         # a healthy stream blocks about 40 ms per frame; many frames in far less time mean the handle is dead
         self._win_frames += 1
         if self._win_frames >= self.WINDOW:
@@ -261,7 +299,7 @@ class PyAudioMic:
 
     def _lost(self, why: str) -> bytes:
         self._log(f"[Warn] Microphone lost ({why}); waiting for it to come back")
-        _close_quietly(self._stream, self._pa)
+        self._abandon_stream()
         self._dead, self._next_try, self._waiting_logged = True, time.monotonic() + 0.5, False
         return self._silence_and_retry()
 
@@ -281,7 +319,8 @@ class PyAudioMic:
         return bytes(INPUT_FRAME_BYTES)
 
     def close(self) -> None:
-        _close_quietly(self._stream, self._pa)
+        if not self._dead:
+            self._abandon_stream()
 
 
 class PyAudioSpeaker:
