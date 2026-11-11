@@ -179,4 +179,4 @@ def test_live_config_declares_the_sleep_tool_only_when_enabled():
     on = build_live_config(replace(CFG, sleep_tool=True, google_search=True)).tools
     assert any(t.function_declarations and t.function_declarations[0].name == "go_to_sleep" for t in on)
     assert any(t.google_search for t in on)
-    assert build_live_config(replace(CFG, sleep_tool=False, google_search=False)).tools is None
+    assert build_live_config(replace(CFG, sleep_tool=False, google_search=False, timer_tool=False)).tools is None

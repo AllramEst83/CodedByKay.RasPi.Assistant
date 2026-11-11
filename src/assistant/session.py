@@ -12,6 +12,7 @@ from google.genai import types
 
 from .config import INPUT_RATE, Config
 from .log import log as default_log
+from .timers import CANCEL_TIMERS, LIST_TIMERS, SET_TIMER
 
 
 def make_client(cfg: Config):
@@ -47,6 +48,26 @@ def _tools(cfg: Config) -> list[types.Tool]:
                          "language, such as 'gå och lägg dig'). Never call it for 'stop', 'wait', 'thanks', "
                          "'okay' or a normal question or sentence."),
         )]))
+    if cfg.timer_tool:
+        tools.append(types.Tool(function_declarations=[
+            types.FunctionDeclaration(
+                name=SET_TIMER,
+                description=("Starts a countdown timer or alarm. Call it when the user asks for a timer, for example "
+                             "'set a timer for five minutes' or 'sätt en timer på tio sekunder'. Convert the time to "
+                             "seconds. The device rings by itself when the time is up."),
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "seconds": types.Schema(type=types.Type.INTEGER, description="Timer length in seconds."),
+                        "label": types.Schema(type=types.Type.STRING,
+                                              description="Optional short name, such as 'pasta'."),
+                    },
+                    required=["seconds"],
+                ),
+            ),
+            types.FunctionDeclaration(name=CANCEL_TIMERS, description="Cancels all running timers."),
+            types.FunctionDeclaration(name=LIST_TIMERS, description="Lists the running timers and the seconds left."),
+        ]))
     return tools
 
 
@@ -83,7 +104,9 @@ class IdleTimer:
 
 class LiveConversation:
     def __init__(self, cfg: Config, client_factory: Callable[[], Any], mic, speaker,
-                 log: Callable[[str], None] = default_log, clock: Callable[[], float] = time.monotonic):
+                 log: Callable[[str], None] = default_log, clock: Callable[[], float] = time.monotonic,
+                 timers=None):
+        self.timers = timers  # a TimerManager shared across conversations (owned by the app)
         self.cfg = cfg
         self._client_factory = client_factory
         self.mic = mic
@@ -196,11 +219,22 @@ class LiveConversation:
                     self._sleep_at = self._clock()
                     self.log("[Status] User said 'go to sleep'")
                 result = {"result": "ok. Reply with at most a few words of goodbye."}
+            elif fc.name in (SET_TIMER, CANCEL_TIMERS, LIST_TIMERS):
+                result = self._timer_tool(fc.name, dict(getattr(fc, "args", None) or {}))
             else:
                 result = {"error": f"unknown function {fc.name}"}
             responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response=result))
         if responses:
             await session.send_tool_response(function_responses=responses)
+
+    def _timer_tool(self, name: str, args: dict) -> dict:
+        if self.timers is None:
+            return {"error": "timers are not available"}
+        if name == SET_TIMER:
+            return self.timers.set(args.get("seconds"), str(args.get("label") or ""))
+        if name == CANCEL_TIMERS:
+            return {"result": f"cancelled {self.timers.cancel_all()} timer(s)"}
+        return {"timers": self.timers.list()}
 
     def _handle(self, sc, timer: IdleTimer) -> None:
         if getattr(sc, "interrupted", False):

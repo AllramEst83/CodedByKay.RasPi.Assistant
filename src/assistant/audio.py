@@ -16,6 +16,13 @@ from array import array
 from .config import FRAME_MS, INPUT_FRAME_BYTES, INPUT_RATE, OUTPUT_RATE
 
 
+def _rms_bytes(pcm: bytes) -> float:
+    """Root-mean-square level of 16-bit little-endian mono PCM (0 for empty input)."""
+    a = array("h")
+    a.frombytes(pcm[: len(pcm) // 2 * 2])
+    return (sum(s * s for s in a) / len(a)) ** 0.5 if a else 0.0
+
+
 def pyaudio_mod():
     import pyaudio  # imported lazily: only the Pi has PortAudio
 
@@ -50,17 +57,50 @@ def write_wav_pcm16(path, pcm: bytes, rate: int) -> None:
         w.writeframes(pcm)
 
 
-def _find_device(pa, spec: str | None, want_input: bool) -> int | None:
-    if not spec:
-        return None
-    if spec.isdigit():
-        return int(spec)
+def pick_usb_device(devices, want_input: bool) -> int | None:
+    """First USB device with the needed direction, skipping HDMI. `devices` is (index, name, max_in, max_out) tuples.
+
+    The Pi 5 has HDMI audio outputs and no onboard mic; without this, the system default can be HDMI (silence).
+    """
+    channels = 2 if want_input else 3
+    for d in devices:
+        name = d[1].lower()
+        if d[channels] > 0 and "usb" in name and "hdmi" not in name:
+            return d[0]
+    return None
+
+
+def _choose_device(pa, spec: str | None, want_input: bool) -> tuple[int | None, str]:
+    """Resolve a device setting to (index, display name).
+
+    `spec` is an index, part of a name, "default" (the system default), or empty (the first USB device,
+    else the system default).
+    """
     key = "maxInputChannels" if want_input else "maxOutputChannels"
-    for i in range(pa.get_device_count()):
-        info = pa.get_device_info_by_index(i)
-        if info[key] > 0 and spec.lower() in info["name"].lower():
-            return i
-    raise RuntimeError(f"No {'input' if want_input else 'output'} audio device matching {spec!r}")
+    spec = (spec or "").strip()
+    index: int | None
+    if spec.lower() == "default":
+        index = None
+    elif spec.isdigit():
+        index = int(spec)
+    elif spec:
+        index = next((i for i in range(pa.get_device_count())
+                      if (d := pa.get_device_info_by_index(i))[key] > 0 and spec.lower() in d["name"].lower()), None)
+        if index is None:
+            raise RuntimeError(f"No {'input' if want_input else 'output'} audio device matching {spec!r}")
+    else:
+        devices = []
+        for i in range(pa.get_device_count()):
+            d = pa.get_device_info_by_index(i)
+            devices.append((i, d["name"], d["maxInputChannels"], d["maxOutputChannels"]))
+        index = pick_usb_device(devices, want_input)
+    try:
+        info = (pa.get_device_info_by_index(index) if index is not None else
+                pa.get_default_input_device_info() if want_input else pa.get_default_output_device_info())
+        name = info["name"] + ("" if index is not None else " (system default)")
+    except OSError:
+        name = "none available"
+    return index, name
 
 
 def list_devices() -> str:
@@ -142,8 +182,8 @@ class PyAudioMic:
     def __init__(self, device: str | None = None):
         self._pa = pyaudio_mod().PyAudio()
         self._chunk = INPUT_FRAME_BYTES // 2
-        self._stream, self._rate, self._channels = _open_stream(
-            self._pa, INPUT_RATE, _find_device(self._pa, device, True), True, self._chunk)
+        index, self.device_name = _choose_device(self._pa, device, True)
+        self._stream, self._rate, self._channels = _open_stream(self._pa, INPUT_RATE, index, True, self._chunk)
         self._native_chunk = self._chunk * self._rate // INPUT_RATE
 
     def read(self) -> bytes:
@@ -169,8 +209,8 @@ class PyAudioSpeaker:
 
     def __init__(self, device: str | None = None):
         self._pa = pyaudio_mod().PyAudio()
-        self._stream, self._rate, self._channels = _open_stream(
-            self._pa, OUTPUT_RATE, _find_device(self._pa, device, False), False)
+        index, self.device_name = _choose_device(self._pa, device, False)
+        self._stream, self._rate, self._channels = _open_stream(self._pa, OUTPUT_RATE, index, False)
         self._start_worker()
 
     def _start_worker(self) -> None:

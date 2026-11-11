@@ -23,7 +23,9 @@ SYSTEM_PROMPT = (
     "question. Keep answers short and conversational, one to three sentences. "
     "Never use markdown, lists, tables or symbols that are awkward to read aloud. "
     "If, and only if, the user says 'go to sleep', say a very short goodbye in their "
-    "language and call go_to_sleep."
+    "language and call go_to_sleep. When the user asks for a timer or alarm, call "
+    "set_timer with the time in seconds and confirm in one short sentence; the device "
+    "rings by itself. Use cancel_timers and list_timers when asked to cancel or list them."
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -48,6 +50,7 @@ class Config:
     speech_rms: float = 500.0  # mic level (16-bit RMS) counted as speech for the idle timer; raise if room noise keeps sessions open
     wake_skip_ms: int = 600  # audio discarded after the chime so the wake phrase's tail is not sent to Gemini
     google_search: bool = True  # let Gemini search the web for current facts (news, weather, prices, dates)
+    timer_tool: bool = True  # "set a timer for 5 minutes": Gemini starts timers that ring on the device
     sleep_tool: bool = True  # saying "go to sleep" ends the conversation at once instead of waiting for the idle timeout
     # Spoken (robot voice) right after the wake chime, chosen by which wake phrase was heard. An empty text turns it off.
     # Keep it to one short word: it should end inside the wake_skip_ms window.
@@ -92,6 +95,7 @@ def load_config(env_path: str | Path | None = None) -> Config:
         wake_skip_ms=int(os.getenv("WAKE_SKIP_MS", "600")),
         google_search=os.getenv("GOOGLE_SEARCH", "true").lower() in ("1", "true", "yes"),
         sleep_tool=os.getenv("SLEEP_TOOL", "true").lower() in ("1", "true", "yes"),
+        timer_tool=os.getenv("TIMER_TOOL", "true").lower() in ("1", "true", "yes"),
         greetings={"sv": os.getenv("GREETING_SV", "Ja?").strip(),
                    "en": os.getenv("GREETING_EN", "Online").strip()},
         greeting_map=_parse_map(os.getenv("GREETING_MAP", "hey gemini:en,hey assistant:en")),

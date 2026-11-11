@@ -56,6 +56,8 @@ Log lines are tagged and colored (in a terminal and in the audio bridge; not in 
 | `[Timeout]` | yellow | the 8 s idle timeout ended the session |
 | `[Feedback]` | black on yellow | an error was announced out loud |
 | `[Error]` | white on red | something failed, with the error text |
+| `[Timer]` | bold cyan | a voice timer was set, cancelled or went off |
+| `[Pass]` `[Warn]` `[Fail]` | green, yellow, red | results of `--doctor` |
 
 ## Run it by hand (without the service)
 
@@ -75,6 +77,35 @@ Test without a mic, using a 16 kHz mono wav that contains the wake phrase and th
 [Pi]  ./venv/bin/python -m assistant --simulate /tmp/in.wav --out /tmp/out.wav   # saves the reply as a wav
 [Pi]  ./venv/bin/python -m assistant --simulate /tmp/in.wav --play               # plays the reply on the speaker
 ```
+
+## Check it and measure it
+
+```
+[Pi]  ./venv/bin/python -m assistant --doctor                 # one Pass / Warn / Fail line per check
+[Pi]  ./venv/bin/python -m assistant --doctor --skip-audio    # leave out the mic and speaker checks
+[Pi]  ./venv/bin/python -m assistant --doctor --skip-api      # leave out the Gemini connection (no tokens used)
+```
+
+`--doctor` checks the `.env` file and its permissions, that the API key exists (never printed), the Vosk wake
+model, espeak-ng, the network, the audio devices, the mic level, a test chime on the speaker, and a short
+Gemini Live session (a few tokens). Run it first when something does not work, and on the day the hardware arrives.
+
+**Wake-word false-trigger test** (no Gemini calls, no cost). Leave it running while you talk normally or the TV
+is on; every `[Active]` line is a trigger, and the text it heard is shown, for example
+`(heard as "[unk] hey assistant")`:
+
+```
+[Pi]  ./venv/bin/python -m assistant --wake-test --minutes 10   # with the Pi's own mic
+[PC]  python src/tools/pc_audio_bridge.py --wake-test            # with the PC's mic, over SSH
+```
+
+At the end it prints the number of triggers and triggers per minute. Anything that was not you saying a wake
+phrase is a false trigger.
+
+**Which audio device is used:** with `AUDIO_IN_DEVICE` / `AUDIO_OUT_DEVICE` empty, the first USB device is chosen
+(HDMI is skipped), and the log says which one at startup (`[Status] Microphone: ...`). If you have two USB devices
+(for example a USB mic and a USB sound card that also has a mic input), set the variable to part of the device
+name, as shown by `--list-devices`. `default` forces the system default.
 
 ## Use your PC's mic and speakers over SSH (audio bridge)
 
@@ -119,12 +150,13 @@ Settings live in `~/gemini-assistant/.env` on the Pi (permission `600`, never co
 | `GEMINI_VOICE` | `Kore` | female: Kore, Aoede, Leda, Zephyr; male: Puck, Charon, Fenrir |
 | `IDLE_TIMEOUT` | `8` | seconds of silence before the session closes |
 | `WAKE_PHRASES` | `hey gemini,hey assistant` | comma-separated; the words must exist in the Vosk model |
-| `AUDIO_IN_DEVICE`, `AUDIO_OUT_DEVICE` | system default | device index or part of its name (see `--list-devices`) |
+| `AUDIO_IN_DEVICE`, `AUDIO_OUT_DEVICE` | first USB device | device index or part of its name (see `--list-devices`); `default` = the system default |
 | `MUTE_MIC_WHILE_SPEAKING` | `false` | set `true` if the assistant interrupts itself because of echo |
 | `SPEECH_RMS` | `500` | mic level that counts as speech for the idle timer; raise it if room noise keeps sessions open |
 | `GREETING_EN`, `GREETING_SV` | `Online`, `Ja?` | robot-voice greeting after the wake chime (needs `espeak-ng`); empty text turns that language's greeting off |
 | `GREETING_SPEED` | `115` | greeting speed in words per minute; lower is slower (error messages use 150) |
 | `GREETING_MAP` | `hey gemini:en,hey assistant:en` | which wake phrase gets which greeting language |
+| `TIMER_TOOL` | `true` | voice timers ("sätt en timer på fem minuter"); they ring with a tone and a spoken message, are kept in memory only (a restart forgets them), at most 10 at once; `false` turns it off |
 | `SLEEP_TOOL` | `true` | saying "go to sleep" (or "gå och lägg dig") ends the conversation at once with a goodbye and a falling chime; `false` turns it off |
 | `GOOGLE_SEARCH` | `true` | let Gemini search the web for current facts (weather, news, prices); `false` turns it off |
 | `WAKE_SKIP_MS` | `600` | audio dropped after the chime so the wake phrase's tail is not sent to Gemini |

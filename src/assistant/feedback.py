@@ -43,6 +43,10 @@ KINDS: dict[str, tuple[tuple[tuple[float, float], ...], dict[str, str]]] = {
         ((300.0, 0.15), (400.0, 0.15), (300.0, 0.15), (400.0, 0.15)),  # wobble
         {"sv": "Gemini är överbelastad. Försök igen strax.", "en": "Gemini is overloaded. Try again shortly."},
     ),
+    "timer": (
+        ((988.0, 0.10), (0.0, 0.06), (988.0, 0.10), (0.0, 0.06), (988.0, 0.10), (0.0, 0.06), (1319.0, 0.25)),  # bright alarm
+        {"sv": "Timern är klar.", "en": "Timer done."},
+    ),
     "unknown": (
         ((300.0, 0.50),),  # one long low tone
         {"sv": "Något gick fel.", "en": "Something went wrong."},

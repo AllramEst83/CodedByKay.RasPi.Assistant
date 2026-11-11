@@ -34,6 +34,10 @@ ssh $SSHO gemini-pi 'cd ~/gemini-assistant && ./venv/bin/python -m assistant --s
 - `session.py` — `LiveConversation`: mic thread -> `asyncio.Queue` -> `send_realtime_input`; `_receive` loops over `session.receive()` (which ends after each turn); `_monitor` ends the session via `IdleTimer`. `IdleTimer` resets on speech from either party and keeps resetting while the speaker is still playing.
 - `audio.py` — `PyAudioMic`/`PyAudioSpeaker` (speaker plays 50 ms pieces so `clear()` implements barge-in) and `FakeMic`/`FakeSpeaker` used by tests and `--simulate`.
 - `config.py` — constants (16 kHz in, 24 kHz out, 8 s idle) and `.env`-driven `Config`.
+- `feedback.py` — error classification (`classify`), tone patterns, espeak-ng speech (`speak`, `speak_cached`, wake greeting); `log.py` — colored tagged log lines; `timers.py` — `TimerManager` (voice timers, owned by `run_forever`, outlive conversations); `doctor.py` — `--doctor` checks.
+- Gemini tools (declared in `session._tools`, answered in `LiveConversation._answer_tools`; the Live API never answers tool calls by itself): Google Search (server side), `go_to_sleep`, `set_timer`/`cancel_timers`/`list_timers`.
+- Audio devices: empty `AUDIO_*_DEVICE` means the first USB device (`audio._choose_device`); streams open at 16/24 kHz mono, else the device rate and stereo, converting with `resample_pcm16`.
+- `app.wake_test` / `--wake-test` listens for the wake phrases only (no API calls). Known: the English Vosk model can hear Swedish ("heter huvudstaden") as `[unk] hey assistant` and trigger; real speech must be used to tune it (see `[Active] ... (heard as "...")` log lines).
 
 ## Gemini Live gotchas (verified with google-genai 3.0.0)
 
@@ -43,7 +47,7 @@ ssh $SSHO gemini-pi 'cd ~/gemini-assistant && ./venv/bin/python -m assistant --s
 
 ## Status
 
-Everything that does not need a real mic/speaker is built and tested. Still unverified on hardware: USB device selection and 16 kHz capture, Vosk false-trigger rate and idle CPU, speaker echo causing self-interruption (`MUTE_MIC_WHILE_SPEAKING` is the workaround), real barge-in. See `stories.yaml` stories 2–5 (marked done/spec checkpoints).
+Everything that does not need a real mic/speaker is built and tested (75 offline tests). Still unverified on hardware: USB device selection and 16 kHz capture, Vosk false-trigger rate (idle CPU is measured: about 5% of one core), speaker echo causing self-interruption (`MUTE_MIC_WHILE_SPEAKING` is the workaround), real barge-in. See `stories.yaml` stories 2–5 (marked done/spec checkpoints).
 
 ## Conventions
 

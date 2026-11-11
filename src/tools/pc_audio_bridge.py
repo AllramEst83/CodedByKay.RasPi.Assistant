@@ -3,6 +3,7 @@
     pip install sounddevice
     python tools/pc_audio_bridge.py                      # talk to the assistant through the PC mic/speakers
     python tools/pc_audio_bridge.py --list-devices
+    python tools/pc_audio_bridge.py --wake-test          # count wake-word triggers only (no Gemini calls, no cost)
     python tools/pc_audio_bridge.py --from-wav in.wav --to-wav out.wav   # no hardware: stream a 16 kHz mono wav
 
 The Pi runs `python -m assistant --remote-audio`: 16 kHz mono PCM goes up its stdin, 24 kHz mono PCM comes back on
@@ -37,7 +38,10 @@ def ssh_command(args) -> list[str]:
     cmd = ["ssh", "-o", "BatchMode=yes"]
     if args.key:
         cmd += ["-i", str(Path(args.key).expanduser()), "-o", "IdentitiesOnly=yes"]
-    return cmd + [args.host, "cd ~/gemini-assistant && ./venv/bin/python -m assistant --remote-audio"]
+    remote = "cd ~/gemini-assistant && ./venv/bin/python -m assistant --remote-audio"
+    if args.wake_test:
+        remote += " --wake-test"
+    return cmd + [args.host, remote]
 
 
 def pump_wav_in(path: str, proc, stop: threading.Event) -> None:
@@ -69,6 +73,8 @@ def main() -> int:
     ap.add_argument("--list-devices", action="store_true")
     ap.add_argument("--from-wav", help="stream this 16 kHz mono wav instead of the mic")
     ap.add_argument("--to-wav", help="save the reply audio to this wav instead of playing it")
+    ap.add_argument("--wake-test", action="store_true",
+                    help="only listen for the wake phrases and count triggers: no Gemini calls, no cost, no speaker")
     ap.add_argument("--seconds", type=float, default=0, help="stop after N seconds (0 = until Ctrl+C)")
     args = ap.parse_args()
 
@@ -113,7 +119,7 @@ def main() -> int:
         threading.Thread(target=writer, daemon=True).start()
 
     speaker = None
-    if not args.to_wav:
+    if not args.to_wav and not args.wake_test:
         import sounddevice as sd
 
         speaker = sd.RawOutputStream(samplerate=OUT_RATE, channels=1, dtype="int16", device=dev(args.out_device),

@@ -13,6 +13,7 @@ class WakeDetector:
             raise FileNotFoundError(f"Vosk model not found at {model_path}")
         SetLogLevel(-1)
         self._phrases = tuple(p.lower() for p in phrases)
+        self.last_text = ""
         self._rec = KaldiRecognizer(
             Model(str(model_path)), rate, json.dumps(list(self._phrases) + ["[unk]"])
         )
@@ -24,6 +25,7 @@ class WakeDetector:
         else:
             text = json.loads(self._rec.PartialResult()).get("partial", "")
         hit = self._match(text)
+        self.last_text = text  # what the recognizer heard, e.g. "[unk] hey assistant": shown in the log to debug false triggers
         if hit:
             self._rec.Reset()
         return hit

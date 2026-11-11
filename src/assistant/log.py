@@ -26,6 +26,10 @@ STYLES: dict[str, str] = {
     "Timeout": "33",          # yellow: idle timeout
     "Feedback": "1;30;43",    # black on yellow: an error was announced out loud
     "Error": "1;97;41",       # white on red: something failed
+    "Timer": "1;36",          # bold cyan: a voice timer was set, cancelled or went off
+    "Pass": "32",             # green: a --doctor check passed
+    "Warn": "93",             # bright yellow: a --doctor check passed with a caveat
+    "Fail": "91",             # bright red: a --doctor check failed
 }
 _TAG = re.compile(r"^\s*\[(\w+)\]")
 
