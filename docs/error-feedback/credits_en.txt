@@ -1,0 +1,2 @@
+tone: credits
+text (en): Gemini credits have run out. Please top up.

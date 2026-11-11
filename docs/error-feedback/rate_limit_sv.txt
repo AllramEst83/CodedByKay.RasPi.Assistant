@@ -1,0 +1,2 @@
+tone: rate_limit
+text (sv): För många förfrågningar. Vänta en stund.

@@ -1,0 +1,2 @@
+tone: server
+text (en): Gemini is overloaded. Try again shortly.

@@ -1,0 +1,2 @@
+tone: credits
+text (sv): Gemini-krediterna är slut. Fyll på kontot.

@@ -1,0 +1,2 @@
+tone: rate_limit
+text (en): Too many requests. Wait a moment.

@@ -14,3 +14,6 @@ src/tests/fixtures/
 # Local tooling state
 .claude/settings.local.json
 _bmad/render/
+
+# Local test replies (contain personal test questions)
+docs/gemini-replies/

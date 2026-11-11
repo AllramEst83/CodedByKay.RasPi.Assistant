@@ -1,0 +1,2 @@
+tone: auth
+text (sv): API-nyckeln fungerar inte.

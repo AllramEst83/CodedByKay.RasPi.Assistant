@@ -1,0 +1,2 @@
+tone: unknown
+text (sv): Något gick fel.

@@ -1,0 +1,2 @@
+tone: network
+text (en): No internet connection.
