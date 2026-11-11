@@ -99,7 +99,7 @@ def speak(text: str, lang: str = "sv", rate: int = OUTPUT_RATE) -> bytes | None:
     if not exe:
         return None
     try:
-        wav = subprocess.run([exe, "-v", lang, "-s", "150", "--stdout", text],
+        wav = subprocess.run([exe, "-v", f"{lang}+f3", "-s", "150", "--stdout", text],  # f3 = female variant
                              capture_output=True, timeout=10, check=True).stdout
         with wave.open(io.BytesIO(wav), "rb") as w:
             src_rate, pcm = w.getframerate(), w.readframes(w.getnframes())

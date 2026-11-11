@@ -37,7 +37,7 @@ class Config:
     vosk_model_path: Path
     model: str = "gemini-3.8-live"
     api_version: str = "v1beta"  # the Live model gives 404 on the SDK's default version; v1beta and v1alpha work
-    voice: str = "Puck"
+    voice: str = "Kore"  # female; others: Aoede, Leda, Zephyr (female), Puck, Charon, Fenrir (male)
     idle_timeout: float = 8.0  # seconds without speech from either party
     wake_phrases: tuple[str, ...] = ("hey gemini", "hey assistant")
     audio_in_device: str | None = None  # index or name substring
@@ -67,7 +67,7 @@ def load_config(env_path: str | Path | None = None) -> Config:
         ),
         model=os.getenv("GEMINI_MODEL", "gemini-3.8-live"),
         api_version=os.getenv("GEMINI_API_VERSION", "v1beta"),
-        voice=os.getenv("GEMINI_VOICE", "Puck"),
+        voice=os.getenv("GEMINI_VOICE", "Kore"),
         idle_timeout=float(os.getenv("IDLE_TIMEOUT", "8.0")),
         wake_phrases=phrases or Config.wake_phrases,
         audio_in_device=os.getenv("AUDIO_IN_DEVICE") or None,
