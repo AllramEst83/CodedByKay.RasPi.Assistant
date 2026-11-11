@@ -537,3 +537,111 @@ def test_no_idle_chime_when_it_is_turned_off():
 
     speaker = _run_once_until_idle(replace(CFG, greetings={"sv": "", "en": ""}, idle_chime=False))
     assert generate_chime(descending=True) not in speaker.audio
+
+
+# --- system prompt: the family --------------------------------------------------------------------------------------
+
+def test_system_prompt_knows_the_family():
+    from assistant.config import SYSTEM_PROMPT
+
+    for name in ("Kay", "Rebecka", "Morris", "Milton", "Virgin Wiberg"):
+        assert name in SYSTEM_PROMPT
+    assert "child" in SYSTEM_PROMPT and "go_to_sleep" in SYSTEM_PROMPT and "set_timer" in SYSTEM_PROMPT
+
+
+def test_family_context_can_be_replaced_or_removed(tmp_path, monkeypatch):
+    from assistant.config import BASE_PROMPT, build_system_prompt, load_config
+
+    assert build_system_prompt("") == BASE_PROMPT
+    assert build_system_prompt("  We are the Test family.  ").endswith("We are the Test family.")
+    env = tmp_path / ".env"
+    env.write_text("")  # nothing in the file: every setting comes from the (monkeypatched) environment, which is undone afterwards
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    monkeypatch.setenv("FAMILY_CONTEXT", "We are the Test family.")
+    cfg = load_config(env)
+    assert "Test family" in cfg.system_prompt and "Morris" not in cfg.system_prompt
+    monkeypatch.setenv("FAMILY_CONTEXT", "")
+    assert load_config(env).system_prompt == BASE_PROMPT
+    monkeypatch.delenv("FAMILY_CONTEXT")
+    assert "Morris" in load_config(env).system_prompt  # unset: the built-in family
+
+
+# --- Gemini says the wake greeting ----------------------------------------------------------------------------------
+
+def _wake_once(cfg, session):
+    class Detector:
+        def reset(self): pass
+        def feed(self, frame): return "hey gemini"
+
+    speaker = FakeSpeaker()
+    logs = []
+    app.run_once(replace(cfg, idle_timeout=0.5), FakeMic(b"\x05\x00" * 4000, speed=50), speaker, Detector(),
+                 factory_for(session), log=logs.append)
+    return speaker, logs
+
+
+def test_gemini_greeting_text_follows_the_wake_phrase():
+    from assistant import feedback
+
+    cfg = replace(CFG, greeting_map={"hey gemini": "en", "hey assistant": "sv"})
+    assert feedback.gemini_greeting_text(cfg, "Hey Gemini") == "Yes?"
+    assert feedback.gemini_greeting_text(cfg, "hey assistant") == "Ja?"
+    assert feedback.gemini_greeting_text(cfg, "hey something") is None
+    assert feedback.gemini_greeting_text(replace(cfg, greeting_source="robot"), "hey gemini") is None
+    assert feedback.gemini_greeting_text(replace(cfg, gemini_greetings={"sv": "", "en": ""}), "hey gemini") is None
+
+
+def test_wake_prompts_gemini_for_the_greeting_and_plays_no_robot_voice():
+    session = FakeSession([])
+    speaker, _ = _wake_once(CFG, session)
+    texts = [kw["text"] for kw in session.sent if "text" in kw]
+    assert len(texts) == 1 and texts[0].startswith("[wake]") and '"Yes?"' in texts[0]
+    assert not any(c.startswith(b"en:") for c in speaker.chunks)  # no espeak greeting
+
+
+def test_no_greeting_prompt_when_the_greeting_is_off_or_robot():
+    for source in ("off", "robot"):
+        session = FakeSession([])
+        _wake_once(replace(CFG, greeting_source=source), session)
+        assert not [kw for kw in session.sent if "text" in kw]
+
+
+def test_a_failed_greeting_prompt_does_not_end_the_conversation():
+    class Session(FakeSession):
+        async def send_realtime_input(self, **kw):
+            if "text" in kw:
+                raise RuntimeError("text input refused")
+            await super().send_realtime_input(**kw)
+
+    session = Session([])
+    _, logs = _wake_once(CFG, session)
+    assert any("Could not ask Gemini for the greeting" in line for line in logs)
+    assert session.sent  # the microphone audio still flowed
+
+
+def test_mic_stays_open_until_the_gemini_greeting_starts_and_is_muted_while_it_plays():
+    import time
+
+    from types import SimpleNamespace as NS
+
+    class Speaker(FakeSpeaker):
+        def write(self, pcm):
+            super().write(pcm)
+            self.busy_until = time.monotonic() + 0.6
+
+    audio = NS(inline_data=NS(data=b"\x01\x00" * 100))
+    msg = NS(server_content=NS(model_turn=NS(parts=[audio]), turn_complete=True, interrupted=False,
+                               input_transcription=None, output_transcription=None), tool_call=None, go_away=None)
+    session = FakeSession([[(0.4, msg)]])  # the greeting audio arrives 0.4 s after connecting
+    speaker = Speaker()
+
+    class Detector:
+        def reset(self): pass
+        def feed(self, frame): return "hey gemini"
+
+    app.run_once(replace(CFG, idle_timeout=1.5, mute_tail_ms=0), FakeMic(b"\x05\x00" * 100000, speed=1), speaker,
+                 Detector(), factory_for(session), log=lambda s: None)
+    silent = [not any(kw["audio"].data) for kw in session.sent if "audio" in kw]
+    assert not silent[0]  # open while waiting for the greeting to arrive
+    assert any(silent)  # muted while the greeting played
+    assert not silent[-1]  # open again afterwards

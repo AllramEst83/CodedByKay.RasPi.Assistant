@@ -12,7 +12,7 @@ OUTPUT_RATE = 24000  # Gemini -> speaker
 FRAME_MS = 40
 INPUT_FRAME_BYTES = INPUT_RATE * FRAME_MS // 1000 * 2  # 16-bit mono
 
-SYSTEM_PROMPT = (
+BASE_PROMPT = (
     "You are a friendly voice assistant running on a Raspberry Pi 5. "
     "Your replies are spoken aloud. Always reply in the same language as the "
     "user's most recent question and switch when they switch; the user mostly "
@@ -25,8 +25,33 @@ SYSTEM_PROMPT = (
     "If, and only if, the user says 'go to sleep', say a very short goodbye in their "
     "language and call go_to_sleep. When the user asks for a timer or alarm, call "
     "set_timer with the time in seconds and confirm in one short sentence; the device "
-    "rings by itself. Use cancel_timers and list_timers when asked to cancel or list them."
+    "rings by itself. Use cancel_timers and list_timers when asked to cancel or list them. "
+    "A text message that starts with [wake] comes from the device itself: the wake phrase was just heard. "
+    "Answer it with only the short greeting it asks for, in a bright, friendly voice, and then wait for the question."
 )
+
+# Who the assistant is for. Override or switch off with FAMILY_CONTEXT in .env (an empty value removes it).
+DEFAULT_FAMILY_CONTEXT = (
+    "This is the home assistant of the Virgin Wiberg family: Kay (the father), Rebecka (the mother) and their two "
+    "children, Morris and Milton. You are their all-around helper: answer questions, explain things, help with "
+    "homework, cooking and planning the day, tell stories and jokes, give practical household advice, set timers and "
+    "look up current information. You cannot tell who is speaking from the voice. If someone says who they are, "
+    "remember it for the rest of the conversation and use their name now and then; otherwise do not guess. Anyone in "
+    "the family may be talking, including the children, so keep every answer suitable for a child: friendly, calm and "
+    "age-appropriate, in simple words, with nothing scary, violent, sexual or otherwise inappropriate. If a child asks "
+    "something a parent should decide, or something about safety, health or anything risky, give a short, safe answer "
+    "and suggest asking Kay or Rebecka. Be warm, patient and encouraging, and never talk down to anyone. If you do not "
+    "know something, say so instead of guessing."
+)
+
+
+def build_system_prompt(family_context: str = DEFAULT_FAMILY_CONTEXT) -> str:
+    """The base instructions plus, if any, the family context."""
+    family_context = (family_context or "").strip()
+    return BASE_PROMPT + (" " + family_context if family_context else "")
+
+
+SYSTEM_PROMPT = build_system_prompt()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -65,6 +90,9 @@ class Config:
     # Keep it to one short word: it should end inside the wake_skip_ms window.
     greetings: dict = field(default_factory=lambda: {"sv": "Ja?", "en": "Online"})
     greeting_map: dict = field(default_factory=lambda: {"hey gemini": "en", "hey assistant": "en"})  # phrase -> language
+    # Who says the greeting: "gemini" (Gemini speaks it, a little slower to arrive), "robot" (espeak-ng, instant) or "off".
+    greeting_source: str = "gemini"
+    gemini_greetings: dict = field(default_factory=lambda: {"sv": "Ja?", "en": "Yes?"})  # what Gemini says, by language
     greeting_speed: int = 115  # espeak words per minute for the greeting (error messages use 150); lower = slower
     feedback_lang: str = "sv"  # language of spoken error messages: sv or en
     error_voice: bool = True  # speak error messages (needs espeak-ng); tones always play
@@ -103,6 +131,7 @@ def load_config(env_path: str | Path | None = None) -> Config:
         echo_mode=os.getenv("ECHO_MODE", "gate").strip().lower(),
         barge_in_margin=float(os.getenv("BARGE_IN_MARGIN", "2.0")),
         mute_tail_ms=int(os.getenv("MUTE_TAIL_MS", "600")),
+        system_prompt=build_system_prompt(os.getenv("FAMILY_CONTEXT", DEFAULT_FAMILY_CONTEXT)),
         speech_rms=float(os.getenv("SPEECH_RMS", "500")),
         wake_confirm_ms=int(os.getenv("WAKE_CONFIRM_MS", "200")),
         wake_skip_ms=int(os.getenv("WAKE_SKIP_MS", "600")),
@@ -113,6 +142,9 @@ def load_config(env_path: str | Path | None = None) -> Config:
         greetings={"sv": os.getenv("GREETING_SV", "Ja?").strip(),
                    "en": os.getenv("GREETING_EN", "Online").strip()},
         greeting_map=_parse_map(os.getenv("GREETING_MAP", "hey gemini:en,hey assistant:en")),
+        greeting_source=os.getenv("GREETING_SOURCE", "gemini").strip().lower(),
+        gemini_greetings={"sv": os.getenv("GEMINI_GREETING_SV", "Ja?").strip(),
+                          "en": os.getenv("GEMINI_GREETING_EN", "Yes?").strip()},
         greeting_speed=int(os.getenv("GREETING_SPEED", "115")),
         feedback_lang=os.getenv("FEEDBACK_LANG", "sv").lower(),
         error_voice=os.getenv("ERROR_VOICE", "true").lower() in ("1", "true", "yes"),

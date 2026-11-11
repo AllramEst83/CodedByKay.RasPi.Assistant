@@ -136,11 +136,21 @@ def greeting_audio(cfg, phrase: str) -> bytes | None:
     """The spoken greeting for the wake phrase that was heard, or None (no text set, unknown phrase, or no espeak-ng)."""
     lang = cfg.greeting_map.get(phrase.lower())
     text = cfg.greetings.get(lang, "") if lang else ""
-    return speak_cached(text, lang, cfg.greeting_speed) if text else None
+    return speak_cached(text, lang, cfg.greeting_speed) if text else None  # (robot greetings only: see run_once)
+
+
+def gemini_greeting_text(cfg, phrase: str) -> str | None:
+    """The word Gemini should say for the wake phrase that was heard, or None (greeting off or unknown phrase)."""
+    if cfg.greeting_source != "gemini":
+        return None
+    lang = cfg.greeting_map.get(phrase.lower())
+    return (cfg.gemini_greetings.get(lang, "") if lang else "") or None
 
 
 def prewarm_greetings(cfg) -> None:
-    """Render every greeting at startup so the first wake is as fast as the rest."""
+    """Render every robot greeting at startup so the first wake is as fast as the rest."""
+    if cfg.greeting_source != "robot":
+        return
     for phrase in cfg.greeting_map:
         greeting_audio(cfg, phrase)
 

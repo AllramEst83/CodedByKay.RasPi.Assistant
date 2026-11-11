@@ -35,6 +35,7 @@ def build_live_config(cfg: Config) -> types.LiveConnectConfig:
 
 SLEEP_TOOL = "go_to_sleep"
 SLEEP_MAX_WAIT = 8.0  # seconds to wait for the goodbye after the tool call before closing anyway
+GREETING_MAX_WAIT = 5.0  # seconds to wait for the spoken greeting to begin before opening the mic anyway
 
 
 def _tools(cfg: Config) -> list[types.Tool]:
@@ -121,6 +122,9 @@ class LiveConversation:
         self._gate = EchoGate(cfg.speech_rms, cfg.barge_in_margin, tail_s=cfg.mute_tail_ms / 1000,
                               delay_s=getattr(speaker, "playback_delay", 0.0))
         self.mute_mic_during_greeting = False  # set by the app: send silence until the wake greeting has finished playing
+        self.greeting: str | None = None  # set by the app: the word Gemini says right after connecting ("Yes?")
+        self._greeting_started = False  # the greeting's audio has begun to play
+        self._greeting_deadline: float | None = None  # stop waiting for it after this
         self._sleep_at: float | None = None  # when Gemini called go_to_sleep
         self._sleep_turn_done = False  # the turn that followed the call has completed (goodbye finished)
 
@@ -163,6 +167,7 @@ class LiveConversation:
             client = self._client_factory()
             async with client.aio.live.connect(model=self.cfg.model, config=build_live_config(self.cfg)) as session:
                 self.log("[Status] Live session open")
+                await self._greet(session)
                 tasks = [
                     asyncio.create_task(self._send(session, audio_q, timer)),
                     asyncio.create_task(self._receive(session, timer)),
@@ -190,6 +195,20 @@ class LiveConversation:
         self.log(f"[Status] Live session closed ({reason})")
         return reason
 
+    async def _greet(self, session) -> None:
+        """Ask Gemini to say the short wake greeting. The mic stays open meanwhile and is only muted while the greeting plays."""
+        if not self.greeting:
+            return
+        prompt = (f'[wake] The wake phrase was just heard. Say only "{self.greeting}" in a short, bright, friendly voice, '
+                  "then wait for the question.")
+        try:
+            await session.send_realtime_input(text=prompt)
+        except Exception as e:  # the greeting is a nicety: never let it end the conversation
+            self.log(f"[Warn] Could not ask Gemini for the greeting: {type(e).__name__}: {e}")
+            return
+        self.mute_mic_during_greeting = True
+        self._greeting_deadline = self._clock() + GREETING_MAX_WAIT
+
     async def _send(self, session, audio_q: asyncio.Queue, timer: IdleTimer) -> str:
         while True:
             data = await audio_q.get()
@@ -197,8 +216,11 @@ class LiveConversation:
             busy = self.speaker.is_busy()
             if busy:
                 self._last_busy = now
-            if self.mute_mic_during_greeting and not busy:
-                self.mute_mic_during_greeting = False  # the greeting is done; open the mic for real
+            if self.mute_mic_during_greeting:
+                if busy:
+                    self._greeting_started = True
+                elif self._greeting_deadline is None or self._greeting_started or now > self._greeting_deadline:
+                    self.mute_mic_during_greeting = False  # the greeting is done (or never came); open the mic for real
             level = _rms(data)
             mode = "mute" if self.cfg.mute_mic_while_speaking else self.cfg.echo_mode
             gate_ok = True

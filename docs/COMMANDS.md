@@ -189,6 +189,9 @@ Settings live in `~/gemini-assistant/.env` on the Pi (permission `600`, never co
 | `GREETING_SPEED` | `115` | greeting speed in words per minute; lower is slower (error messages use 150) |
 | `GREETING_MAP` | `hey gemini:en,hey assistant:en` | which wake phrase gets which greeting language |
 | `IDLE_CHIME` | `true` | play the falling chime when a conversation ends by itself after `IDLE_TIMEOUT` seconds of silence ("go to sleep" always plays it) |
+| `FAMILY_CONTEXT` | the Virgin Wiberg family: Kay, Rebecka, Morris, Milton | who the assistant is for, as one line of instructions (kept child-friendly); an empty value removes it. The built-in text is `DEFAULT_FAMILY_CONTEXT` in `config.py` |
+| `GREETING_SOURCE` | `gemini` | who says the wake greeting: `gemini` (Gemini says it, about a second after the chime), `robot` (espeak-ng, instant; uses `GREETING_*` and `GREETING_SPEED`) or `off` |
+| `GEMINI_GREETING_EN` / `GEMINI_GREETING_SV` | `Yes?` / `Ja?` | the word Gemini says for each language (the language follows the wake phrase, see `GREETING_MAP`) |
 | `TIMER_TOOL` | `true` | voice timers ("sätt en timer på fem minuter"); they ring with a tone and a spoken message, are kept in memory only (a restart forgets them), at most 10 at once; `false` turns it off |
 | `SLEEP_TOOL` | `true` | saying "go to sleep" (or "gå och lägg dig") ends the conversation at once with a goodbye and a falling chime; `false` turns it off |
 | `GOOGLE_SEARCH` | `true` | let Gemini search the web for current facts (weather, news, prices); `false` turns it off |
