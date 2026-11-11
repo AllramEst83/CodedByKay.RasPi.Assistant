@@ -508,3 +508,32 @@ def test_gate_recovers_when_the_user_was_talking_while_it_learned_the_echo():
     out = run_gate(gate, [(5000, 3000)] * 10 + [(900, 3000)] * 10 + [(5000 + 900, 3000)] * 6)
     assert gate.echo_ratio is not None and gate.echo_ratio < 0.5   # came down from 1.67 to the real ~0.3
     assert all(out[-6:])                                           # so the user is heard afterwards
+
+
+# --- chime when the conversation ends -------------------------------------------------------------------------------
+
+def _run_once_until_idle(cfg):
+    from assistant.audio import generate_chime  # noqa: F401
+
+    class Detector:
+        def reset(self): pass
+        def feed(self, frame): return "hey gemini"
+
+    speaker = FakeSpeaker()
+    app.run_once(cfg, FakeMic(b"", speed=50), speaker, Detector(), factory_for(FakeSession([])), log=lambda s: None)
+    return speaker
+
+
+def test_falling_chime_plays_when_the_conversation_ends_after_the_idle_timeout():
+    from assistant.audio import generate_chime
+
+    speaker = _run_once_until_idle(replace(CFG, greetings={"sv": "", "en": ""}))
+    assert speaker.audio.endswith(generate_chime(descending=True))
+    assert speaker.audio.startswith(generate_chime())  # the rising wake chime came first
+
+
+def test_no_idle_chime_when_it_is_turned_off():
+    from assistant.audio import generate_chime
+
+    speaker = _run_once_until_idle(replace(CFG, greetings={"sv": "", "en": ""}, idle_chime=False))
+    assert generate_chime(descending=True) not in speaker.audio

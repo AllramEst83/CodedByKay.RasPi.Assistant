@@ -188,6 +188,7 @@ Settings live in `~/gemini-assistant/.env` on the Pi (permission `600`, never co
 | `GREETING_EN`, `GREETING_SV` | `Online`, `Ja?` | robot-voice greeting after the wake chime (needs `espeak-ng`); empty text turns that language's greeting off |
 | `GREETING_SPEED` | `115` | greeting speed in words per minute; lower is slower (error messages use 150) |
 | `GREETING_MAP` | `hey gemini:en,hey assistant:en` | which wake phrase gets which greeting language |
+| `IDLE_CHIME` | `true` | play the falling chime when a conversation ends by itself after `IDLE_TIMEOUT` seconds of silence ("go to sleep" always plays it) |
 | `TIMER_TOOL` | `true` | voice timers ("sätt en timer på fem minuter"); they ring with a tone and a spoken message, are kept in memory only (a restart forgets them), at most 10 at once; `false` turns it off |
 | `SLEEP_TOOL` | `true` | saying "go to sleep" (or "gå och lägg dig") ends the conversation at once with a goodbye and a falling chime; `false` turns it off |
 | `GOOGLE_SEARCH` | `true` | let Gemini search the web for current facts (weather, news, prices); `false` turns it off |
