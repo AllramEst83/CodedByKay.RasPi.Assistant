@@ -70,6 +70,7 @@ class LiveConversation:
         self.log = log
         self._clock = clock
         self.transcript: dict[str, list[str]] = {"user": [], "assistant": []}
+        self.last_error: BaseException | None = None  # set when run() ends with "error: ..."
 
     async def run(self) -> str:
         """Run until idle timeout or error. Returns 'idle', 'go_away' or 'error: ...'."""
@@ -113,6 +114,7 @@ class LiveConversation:
                         raise t.exception()
                     reason = t.result()
         except Exception as e:  # connection, auth and quota errors end the session, not the program
+            self.last_error = e
             reason = f"error: {type(e).__name__}: {e}"
             self.log(f"[Error] {reason}")
             self.speaker.clear()

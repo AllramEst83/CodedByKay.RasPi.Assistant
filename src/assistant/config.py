@@ -14,10 +14,14 @@ INPUT_FRAME_BYTES = INPUT_RATE * FRAME_MS // 1000 * 2  # 16-bit mono
 
 SYSTEM_PROMPT = (
     "You are a friendly voice assistant running on a Raspberry Pi 5. "
-    "Your replies are spoken aloud. Reply in natural Swedish unless the user "
-    "speaks English, then reply in English. Keep answers short and "
-    "conversational, one to three sentences. Never use markdown, lists, "
-    "tables or symbols that are awkward to read aloud."
+    "Your replies are spoken aloud. Always reply in the same language as the "
+    "user's most recent question and switch when they switch; the user mostly "
+    "speaks Swedish or English. If the language is unclear, use Swedish. The "
+    "audio may begin with the tail of a wake phrase ('hey gemini', 'hey "
+    "assistant') or a stray syllable: ignore it, do not greet, do not reply to "
+    "it, and never choose the reply language from it. Answer only the actual "
+    "question. Keep answers short and conversational, one to three sentences. "
+    "Never use markdown, lists, tables or symbols that are awkward to read aloud."
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -40,6 +44,9 @@ class Config:
     audio_out_device: str | None = None
     mute_mic_while_speaking: bool = False  # set True if the speaker echoes into the mic
     speech_rms: float = 500.0  # mic level (16-bit RMS) counted as speech for the idle timer; raise if room noise keeps sessions open
+    wake_skip_ms: int = 600  # audio discarded after the chime so the wake phrase's tail is not sent to Gemini
+    feedback_lang: str = "sv"  # language of spoken error messages: sv or en
+    error_voice: bool = True  # speak error messages (needs espeak-ng); tones always play
     system_prompt: str = SYSTEM_PROMPT
 
 
@@ -67,4 +74,7 @@ def load_config(env_path: str | Path | None = None) -> Config:
         audio_out_device=os.getenv("AUDIO_OUT_DEVICE") or None,
         mute_mic_while_speaking=os.getenv("MUTE_MIC_WHILE_SPEAKING", "").lower() in ("1", "true", "yes"),
         speech_rms=float(os.getenv("SPEECH_RMS", "500")),
+        wake_skip_ms=int(os.getenv("WAKE_SKIP_MS", "600")),
+        feedback_lang=os.getenv("FEEDBACK_LANG", "sv").lower(),
+        error_voice=os.getenv("ERROR_VOICE", "true").lower() in ("1", "true", "yes"),
     )
