@@ -27,7 +27,7 @@ A vision to realize: Kay wants a hands-free, voice-only Gemini assistant on a Ra
   - **intent:** The user can interrupt the assistant mid-reply (barge-in).
   - **success:** Speaking over a reply stops playback and the new utterance is answered.
 - **CAP-5**
-  - **intent:** Follow-ups need no wake word while the session is active; after 8 s without speech from either party the session closes and the device returns to idle.
+  - **intent:** Follow-ups need no wake word while the session is active; after 8 s without speech from either party the session closes and the device returns to idle. Saying "go to sleep" closes it at once (Gemini calls a `go_to_sleep` tool, says a short goodbye, a falling chime plays).
   - **success:** A follow-up within 8 s works without the wake word, and user speech restarts the 8 s window; after 8 s of silence the log shows the session closed and the wake word is required again.
 - **CAP-6**
   - **intent:** Replies are short, spoken-style and markdown-free, Swedish by default and English when the user speaks English.
@@ -55,7 +55,7 @@ A vision to realize: Kay wants a hands-free, voice-only Gemini assistant on a Ra
 
 - No screen or UI.
 - No multi-room or multi-user support.
-- No custom tool use or smart-home control. Google Search grounding (built into the Live API, `GOOGLE_SEARCH`) is allowed so answers can use current facts.
+- No custom tool use beyond `go_to_sleep`, and no smart-home control. Google Search grounding (built into the Live API, `GOOGLE_SEARCH`) is allowed so answers can use current facts.
 - No Docker or web-server role for the Pi.
 - No cloud-based wake-word detection.
 - No vendor-hosted or account-bound wake-word engine (e.g. Picovoice).

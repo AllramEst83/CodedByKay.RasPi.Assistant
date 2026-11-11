@@ -27,9 +27,27 @@ def build_live_config(cfg: Config) -> types.LiveConnectConfig:
         ),
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
-        # Google Search grounding runs on Google's side; the model decides when a question needs the web.
-        tools=[types.Tool(google_search=types.GoogleSearch())] if cfg.google_search else None,
+        tools=_tools(cfg) or None,
     )
+
+
+SLEEP_TOOL = "go_to_sleep"
+SLEEP_MAX_WAIT = 8.0  # seconds to wait for the goodbye after the tool call before closing anyway
+
+
+def _tools(cfg: Config) -> list[types.Tool]:
+    tools = []
+    if cfg.google_search:  # runs on Google's side; the model decides when a question needs the web
+        tools.append(types.Tool(google_search=types.GoogleSearch()))
+    if cfg.sleep_tool:
+        tools.append(types.Tool(function_declarations=[types.FunctionDeclaration(
+            name=SLEEP_TOOL,
+            description=("Ends the conversation so the assistant goes back to waiting for its wake phrase. "
+                         "Call it ONLY when the user explicitly says 'go to sleep' (or the same request in another "
+                         "language, such as 'gå och lägg dig'). Never call it for 'stop', 'wait', 'thanks', "
+                         "'okay' or a normal question or sentence."),
+        )]))
+    return tools
 
 
 def _rms(pcm: bytes) -> float:
@@ -75,6 +93,8 @@ class LiveConversation:
         self.transcript: dict[str, list[str]] = {"user": [], "assistant": []}
         self.last_error: BaseException | None = None  # set when run() ends with "error: ..."
         self._turn: dict[str, list[str]] = {"user": [], "assistant": []}  # text of the turn in progress, for the log
+        self._sleep_at: float | None = None  # when Gemini called go_to_sleep
+        self._sleep_turn_done = False  # the turn that followed the call has completed (goodbye finished)
 
     def _flush_turn(self) -> None:
         """Log what was said in the finished (or interrupted) turn."""
@@ -155,10 +175,28 @@ class LiveConversation:
                 if getattr(msg, "go_away", None):
                     self.log("[Status] Server asked to end the session")
                     return "go_away"
+                tool_call = getattr(msg, "tool_call", None)
+                if tool_call is not None:
+                    await self._answer_tools(session, tool_call)
                 sc = getattr(msg, "server_content", None)
                 if sc is not None:
                     self._handle(sc, timer)
             await asyncio.sleep(0.01)
+
+    async def _answer_tools(self, session, tool_call) -> None:
+        """The Live API does not answer tool calls by itself; reply so the model can finish its turn."""
+        responses = []
+        for fc in getattr(tool_call, "function_calls", None) or []:
+            if fc.name == SLEEP_TOOL:
+                if self._sleep_at is None:
+                    self._sleep_at = self._clock()
+                    self.log("[Status] User said 'go to sleep'")
+                result = {"result": "ok. Reply with at most a few words of goodbye."}
+            else:
+                result = {"error": f"unknown function {fc.name}"}
+            responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response=result))
+        if responses:
+            await session.send_tool_response(function_responses=responses)
 
     def _handle(self, sc, timer: IdleTimer) -> None:
         if getattr(sc, "interrupted", False):
@@ -185,10 +223,18 @@ class LiveConversation:
         if getattr(sc, "turn_complete", False):
             timer.touch()
             self._flush_turn()
+            if self._sleep_at is not None:
+                self._sleep_turn_done = True
 
     async def _monitor(self, timer: IdleTimer) -> str:
         while True:
             await asyncio.sleep(0.1)
+            if self._sleep_at is not None:
+                # let the goodbye finish playing, but never hang if the turn never completes
+                waited = self._clock() - self._sleep_at
+                if (self._sleep_turn_done and not self.speaker.is_busy()) or waited > SLEEP_MAX_WAIT:
+                    return "sleep"
+                continue
             if timer.expired(busy=self.speaker.is_busy()):
                 self.log(f"[Timeout] No speech for {self.cfg.idle_timeout:g}s, returning to idle")
                 return "idle"

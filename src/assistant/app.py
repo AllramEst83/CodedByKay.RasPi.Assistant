@@ -30,6 +30,9 @@ def run_once(cfg: Config, mic, speaker, detector, client_factory, log: Callable[
         mic.read()  # drop the tail of the wake phrase (and any stale buffered audio) so Gemini never hears it
     conv = LiveConversation(cfg, client_factory, mic, speaker, log)
     reason = asyncio.run(conv.run())  # a fresh event loop (and client) per conversation
+    if reason == "sleep":
+        speaker.play_blocking(generate_chime(descending=True))
+        log("[Status] Going to sleep")
     if reason.startswith("error") and conv.last_error is not None:
         feedback.announce(feedback.classify(conv.last_error), speaker, cfg.feedback_lang, cfg.error_voice, log)
     return conv

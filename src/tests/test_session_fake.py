@@ -26,9 +26,13 @@ class FakeSession:
     def __init__(self, script):
         self.script = list(script)
         self.sent = []
+        self.tool_responses = []
 
     async def send_realtime_input(self, **kw):
         self.sent.append(kw)
+
+    async def send_tool_response(self, **kw):
+        self.tool_responses.extend(kw["function_responses"])
 
     async def receive(self):
         if not self.script:
@@ -133,3 +137,46 @@ def test_turns_are_logged_as_you_and_gemini_lines():
     asyncio.run(conv.run())
     assert "[You] Hej där" in lines and "[Gemini] Hej på dig!" in lines
     assert lines.index("[You] Hej där") < lines.index("[Gemini] Hej på dig!")
+
+
+def tool_msg(name, id="call-1"):
+    return NS(tool_call=NS(function_calls=[NS(id=id, name=name)]))
+
+
+def test_go_to_sleep_ends_the_session_after_the_goodbye():
+    cfg = replace(CFG, idle_timeout=5.0)  # long: only the tool call can end this quickly
+    session = FakeSession([[
+        (0.0, tool_msg("go_to_sleep")),
+        (0.0, audio_msg(b"A" * 50)),
+        (0.05, sc(turn_complete=True)),
+    ]])
+    reason, _, speaker, elapsed = run(session, cfg)
+    assert reason == "sleep"
+    assert elapsed < 3
+    assert session.tool_responses and session.tool_responses[0].name == "go_to_sleep"
+    assert b"A" * 50 in speaker.audio  # the goodbye was played
+
+
+def test_go_to_sleep_never_hangs_if_the_turn_does_not_complete(monkeypatch):
+    import assistant.session as s
+
+    monkeypatch.setattr(s, "SLEEP_MAX_WAIT", 0.3)
+    cfg = replace(CFG, idle_timeout=5.0)
+    reason, _, _, elapsed = run(FakeSession([[(0.0, tool_msg("go_to_sleep"))]]), cfg)
+    assert reason == "sleep" and elapsed < 3
+
+
+def test_unknown_tool_call_gets_an_error_response_and_the_session_continues():
+    session = FakeSession([[(0.0, tool_msg("launch_missiles")), (0.0, sc(turn_complete=True))]])
+    reason, _, _, _ = run(session)
+    assert reason == "idle"
+    assert "error" in session.tool_responses[0].response
+
+
+def test_live_config_declares_the_sleep_tool_only_when_enabled():
+    from assistant.session import build_live_config
+
+    on = build_live_config(replace(CFG, sleep_tool=True, google_search=True)).tools
+    assert any(t.function_declarations and t.function_declarations[0].name == "go_to_sleep" for t in on)
+    assert any(t.google_search for t in on)
+    assert build_live_config(replace(CFG, sleep_tool=False, google_search=False)).tools is None

@@ -22,10 +22,11 @@ def pyaudio_mod():
     return pyaudio
 
 
-def generate_chime(rate: int = OUTPUT_RATE) -> bytes:
-    """Soft two-tone chime (C5 then E5), no audio files needed."""
+def generate_chime(rate: int = OUTPUT_RATE, descending: bool = False) -> bytes:
+    """Soft two-tone chime, no audio files needed: C5 then E5 to wake, E5 then G4 (falling) to go to sleep."""
     out = bytearray()
-    for freq, dur in ((523.25, 0.08), (659.25, 0.12)):
+    tones = ((659.25, 0.08), (392.0, 0.18)) if descending else ((523.25, 0.08), (659.25, 0.12))
+    for freq, dur in tones:
         n = int(rate * dur)
         for i in range(n):
             env = math.sin(math.pi * i / n)

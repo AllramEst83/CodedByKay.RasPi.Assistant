@@ -21,7 +21,9 @@ SYSTEM_PROMPT = (
     "assistant') or a stray syllable: ignore it, do not greet, do not reply to "
     "it, and never choose the reply language from it. Answer only the actual "
     "question. Keep answers short and conversational, one to three sentences. "
-    "Never use markdown, lists, tables or symbols that are awkward to read aloud."
+    "Never use markdown, lists, tables or symbols that are awkward to read aloud. "
+    "If, and only if, the user says 'go to sleep', say a very short goodbye in their "
+    "language and call go_to_sleep."
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -46,6 +48,7 @@ class Config:
     speech_rms: float = 500.0  # mic level (16-bit RMS) counted as speech for the idle timer; raise if room noise keeps sessions open
     wake_skip_ms: int = 600  # audio discarded after the chime so the wake phrase's tail is not sent to Gemini
     google_search: bool = True  # let Gemini search the web for current facts (news, weather, prices, dates)
+    sleep_tool: bool = True  # saying "go to sleep" ends the conversation at once instead of waiting for the idle timeout
     feedback_lang: str = "sv"  # language of spoken error messages: sv or en
     error_voice: bool = True  # speak error messages (needs espeak-ng); tones always play
     system_prompt: str = SYSTEM_PROMPT
@@ -77,6 +80,7 @@ def load_config(env_path: str | Path | None = None) -> Config:
         speech_rms=float(os.getenv("SPEECH_RMS", "500")),
         wake_skip_ms=int(os.getenv("WAKE_SKIP_MS", "600")),
         google_search=os.getenv("GOOGLE_SEARCH", "true").lower() in ("1", "true", "yes"),
+        sleep_tool=os.getenv("SLEEP_TOOL", "true").lower() in ("1", "true", "yes"),
         feedback_lang=os.getenv("FEEDBACK_LANG", "sv").lower(),
         error_voice=os.getenv("ERROR_VOICE", "true").lower() in ("1", "true", "yes"),
     )
