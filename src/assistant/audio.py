@@ -170,6 +170,9 @@ class PyAudioSpeaker:
         self._pa = pyaudio_mod().PyAudio()
         self._stream, self._rate, self._channels = _open_stream(
             self._pa, OUTPUT_RATE, _find_device(self._pa, device, False), False)
+        self._start_worker()
+
+    def _start_worker(self) -> None:
         self._piece = self._rate * 2 * self._channels * 50 // 1000  # bytes in 50 ms of device audio
         self._piece -= self._piece % (2 * self._channels)
         self._q: queue.Queue = queue.Queue()
@@ -238,6 +241,62 @@ class PyAudioSpeaker:
         self._stream.stop_stream()
         self._stream.close()
         self._pa.terminate()
+
+
+class StdioMic:
+    """Mic audio arrives on stdin as 16 kHz mono 16-bit PCM (e.g. streamed from the PC over SSH)."""
+
+    def __init__(self, stream=None):
+        import sys
+
+        self._in = stream or sys.stdin.buffer
+
+    def read(self) -> bytes:
+        data = b""
+        while len(data) < INPUT_FRAME_BYTES:
+            chunk = self._in.read(INPUT_FRAME_BYTES - len(data))
+            if not chunk:
+                raise EOFError("audio input closed")
+            data += chunk
+        return data
+
+    def close(self) -> None:
+        pass
+
+
+class _PacedSink:
+    """Writes PCM to a stream at real-time speed, so the speaker's queue still reflects what has been heard."""
+
+    def __init__(self, out, rate: int):
+        self._out, self._rate = out, rate
+
+    def write(self, piece: bytes) -> None:
+        self._out.write(piece)
+        self._out.flush()
+        time.sleep(len(piece) / 2 / self._rate)
+
+    def stop_stream(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+class _NoPortAudio:
+    def terminate(self) -> None:
+        pass
+
+
+class StdioSpeaker(PyAudioSpeaker):
+    """Reply audio goes to stdout as 24 kHz mono 16-bit PCM. Paced in real time so barge-in (clear) still works."""
+
+    def __init__(self, out=None):
+        import sys
+
+        self._pa = _NoPortAudio()
+        self._rate, self._channels = OUTPUT_RATE, 1
+        self._stream = _PacedSink(out or sys.stdout.buffer, OUTPUT_RATE)
+        self._start_worker()
 
 
 class FakeMic:

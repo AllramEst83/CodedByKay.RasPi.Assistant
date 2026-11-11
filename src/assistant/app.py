@@ -39,6 +39,8 @@ def run_forever(cfg: Config, mic, speaker, detector, client_factory, log: Callab
         while True:
             try:
                 run_once(cfg, mic, speaker, detector, client_factory, log)
+            except EOFError:
+                raise  # audio input closed (remote-audio bridge disconnected): stop instead of retrying
             except Exception as e:  # keep the assistant alive; tell the user instead of dying silently
                 log(f"[Error] {type(e).__name__}: {e}")
                 try:
