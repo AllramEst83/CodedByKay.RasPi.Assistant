@@ -106,7 +106,8 @@ def main() -> int:
     if not args.to_wav:
         import sounddevice as sd
 
-        speaker = sd.RawOutputStream(samplerate=OUT_RATE, channels=1, dtype="int16", device=dev(args.out_device))
+        speaker = sd.RawOutputStream(samplerate=OUT_RATE, channels=1, dtype="int16", device=dev(args.out_device),
+                                   latency="high")  # bigger buffer: avoids clicks from network jitter
         streams.append(speaker)
 
     def reader():

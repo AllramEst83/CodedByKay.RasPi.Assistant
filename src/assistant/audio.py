@@ -267,13 +267,20 @@ class StdioMic:
 class _PacedSink:
     """Writes PCM to a stream at real-time speed, so the speaker's queue still reflects what has been heard."""
 
-    def __init__(self, out, rate: int):
-        self._out, self._rate = out, rate
+    def __init__(self, out, rate: int, lead: float = 0.25):
+        # `lead` seconds are sent ahead of real time, giving the far end a cushion against network jitter
+        self._out, self._rate, self._lead = out, rate, lead
+        self._t0: float | None = None
+        self._sent = 0.0  # seconds of audio sent since _t0
 
     def write(self, piece: bytes) -> None:
+        now = time.monotonic()
+        if self._t0 is None or now - self._t0 > self._sent + 0.5:  # the stream went idle: restart the clock
+            self._t0, self._sent = now, 0.0
         self._out.write(piece)
         self._out.flush()
-        time.sleep(len(piece) / 2 / self._rate)
+        self._sent += len(piece) / 2 / self._rate
+        time.sleep(max(0.0, self._t0 + self._sent - self._lead - time.monotonic()))
 
     def stop_stream(self) -> None:
         pass
