@@ -1,0 +1,18 @@
+[Unit]
+Description=Gemini voice assistant (wake phrase -> Gemini Live)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+SupplementaryGroups=audio
+WorkingDirectory=__APP__
+ExecStart=__APP__/venv/bin/python -u -m assistant
+Environment=PYTHONUNBUFFERED=1
+# If the mic or speaker is missing or the app crashes, try again every 10 s instead of staying down.
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
