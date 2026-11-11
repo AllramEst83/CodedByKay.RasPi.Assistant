@@ -11,6 +11,7 @@ from google import genai
 from google.genai import types
 
 from .config import INPUT_RATE, Config
+from .echo import EchoGate
 from .log import log as default_log
 from .timers import CANCEL_TIMERS, LIST_TIMERS, SET_TIMER
 
@@ -117,6 +118,8 @@ class LiveConversation:
         self.last_error: BaseException | None = None  # set when run() ends with "error: ..."
         self._turn: dict[str, list[str]] = {"user": [], "assistant": []}  # text of the turn in progress, for the log
         self._last_busy = float("-inf")  # when the speaker last had audio queued
+        self._gate = EchoGate(cfg.speech_rms, cfg.barge_in_margin, tail_s=cfg.mute_tail_ms / 1000,
+                              delay_s=getattr(speaker, "playback_delay", 0.0))
         self.mute_mic_during_greeting = False  # set by the app: send silence until the wake greeting has finished playing
         self._sleep_at: float | None = None  # when Gemini called go_to_sleep
         self._sleep_turn_done = False  # the turn that followed the call has completed (goodbye finished)
@@ -194,13 +197,18 @@ class LiveConversation:
             busy = self.speaker.is_busy()
             if busy:
                 self._last_busy = now
-            # "speaking" while audio is playing and for mute_tail_ms after the last sample: room reverb, network and playback delay
-            echo_window = busy or now - self._last_busy < self.cfg.mute_tail_ms / 1000
-            if self.mute_mic_during_greeting and not echo_window:
+            if self.mute_mic_during_greeting and not busy:
                 self.mute_mic_during_greeting = False  # the greeting is done; open the mic for real
-            if (self.cfg.mute_mic_while_speaking or self.mute_mic_during_greeting) and echo_window:
+            level = _rms(data)
+            mode = "mute" if self.cfg.mute_mic_while_speaking else self.cfg.echo_mode
+            gate_ok = True
+            if mode == "gate":  # must see every frame, to learn the echo level
+                gate_ok = self._gate.allow(level, self.speaker.level(), now)
+            # "mute" mode ignores the mic while speaking and for mute_tail_ms after the last sample (reverb, delays)
+            muted = busy or now - self._last_busy < self.cfg.mute_tail_ms / 1000
+            if (mode == "mute" and muted) or (self.mute_mic_during_greeting and busy) or not gate_ok:
                 data = bytes(len(data))  # keep the stream flowing but silent
-            elif _rms(data) > self.cfg.speech_rms:
+            elif level > self.cfg.speech_rms:
                 timer.touch()  # local voice check: Gemini's transcript arrives too late to hold the timer open
             await session.send_realtime_input(
                 audio=types.Blob(data=data, mime_type=f"audio/pcm;rate={INPUT_RATE}")

@@ -142,20 +142,21 @@ Use this to test the assistant before the Pi has its own mic and speaker. The PC
 
 Say "Hey Gemini" or "Hey Assistant" and ask a question. The Pi's log lines appear in the same window. Ctrl+C stops it.
 
-**Echo: the assistant hearing itself.** If sound from the PC speakers reaches the microphone, Gemini takes its own
-answer for you speaking, interrupts itself and starts the answer again (you see `[You]` lines with fragments of the
-answer, such as "grand theft", followed by `[Interrupted]`). By default the bridge therefore makes the Pi ignore the
-mic while it speaks (plus `MUTE_TAIL_MS`, 600 ms, afterwards); the downside is that you cannot interrupt it. Check
-your setup, then choose:
+**Interrupting the assistant, and echo.** You can speak over the assistant and it stops (Gemini's own barge-in). The
+catch is that its voice leaks from the speaker into the microphone; if that reached Gemini, it would take its own
+answer for you speaking, interrupt itself and start over (you would see `[You]` lines with fragments of the answer,
+such as "grand theft", followed by `[Interrupted]`). The Pi avoids this with an echo gate (`src/assistant/echo.py`):
+it knows what the speaker plays, learns how loud the echo is in the mic, and forwards the mic to Gemini only when
+it is clearly louder than that, meaning you are speaking. It works with a headset, headphones or speakers.
 
 ```
-python src/tools/pc_audio_bridge.py --echo-check      # plays a quiet tone; [Pass] = the mic does not hear the speaker
-python src/tools/pc_audio_bridge.py --headphones      # only if the check passes: the mic stays open, so you can interrupt
+python src/tools/pc_audio_bridge.py --echo-check      # plays a quiet tone; [Pass] = the mic does not hear the speaker at all
 ```
 
-The bridge prints which microphone and speaker it opened. If they are not your headset, run `--list-devices` and
-pass `--in-device` and `--out-device` (a number or part of the name). On the Pi itself the same protection is
-`MUTE_MIC_WHILE_SPEAKING=true` in `.env`.
+The bridge prints which microphone and speaker it opened. If they are not the ones you want, run `--list-devices`
+and pass `--in-device` and `--out-device` (a number or part of the name). Settings in `.env`: `ECHO_MODE`
+(`gate` by default, `mute` ignores the mic while it speaks, `off` sends the mic as is) and `BARGE_IN_MARGIN` (how
+many times louder than the echo you must be; lower it if you cannot interrupt, raise it if it interrupts itself).
 
 Options:
 
@@ -166,7 +167,7 @@ python src/tools/pc_audio_bridge.py --host gemini-pi.local         # another hos
 python src/tools/pc_audio_bridge.py --from-wav in.wav --to-wav out.wav --seconds 25   # headless test, no mic or speaker
 ```
 
-If you hear clicks: use headphones, and tell the maintainer where in the reply they happen (start or end, throughout, or while you speak).
+If you hear clicks: tell the maintainer where in the reply they happen (start or end, throughout, or while you speak).
 
 ## Change settings
 
@@ -179,8 +180,10 @@ Settings live in `~/gemini-assistant/.env` on the Pi (permission `600`, never co
 | `IDLE_TIMEOUT` | `8` | seconds of silence before the session closes |
 | `WAKE_PHRASES` | `hey gemini,hey assistant` | comma-separated; the words must exist in the Vosk model |
 | `AUDIO_IN_DEVICE`, `AUDIO_OUT_DEVICE` | first USB device | device index or part of its name (see `--list-devices`); `default` = the system default |
-| `MUTE_TAIL_MS` | `600` | while muting (greeting, or `MUTE_MIC_WHILE_SPEAKING`), keep ignoring the mic this long after the speaker stops (room reverb, network and playback delay) |
-| `MUTE_MIC_WHILE_SPEAKING` | `false` | set `true` if the assistant interrupts itself because of echo |
+| `ECHO_MODE` | `gate` | `gate`: hear you over its own voice so you can interrupt; `mute`: ignore the mic while it speaks; `off`: send the mic as is |
+| `BARGE_IN_MARGIN` | `2.0` | gate: how many times louder than the expected echo you must be to interrupt (lower = easier) |
+| `MUTE_TAIL_MS` | `600` | `ECHO_MODE=mute` only: keep ignoring the mic this long after the speaker stops |
+| `MUTE_MIC_WHILE_SPEAKING` | `false` | same as `ECHO_MODE=mute`; use it only if the gate cannot tell your voice from the echo |
 | `SPEECH_RMS` | `500` | mic level that counts as speech for the idle timer; raise it if room noise keeps sessions open |
 | `GREETING_EN`, `GREETING_SV` | `Online`, `Ja?` | robot-voice greeting after the wake chime (needs `espeak-ng`); empty text turns that language's greeting off |
 | `GREETING_SPEED` | `115` | greeting speed in words per minute; lower is slower (error messages use 150) |
@@ -229,7 +232,7 @@ When something goes wrong the Pi plays a tone, then speaks a short message (need
 | `Permission denied (publickey)` on SSH | check the key path and that the Pi accepts it |
 | No sound | `aplay -l`; set `AUDIO_OUT_DEVICE`; check the speaker's own volume and power |
 | It wakes up on ordinary talk | raise the wake threshold by tightening `WAKE_PHRASES`, or tell the maintainer |
-| It interrupts itself | set `MUTE_MIC_WHILE_SPEAKING=true` and move the mic away from the speaker |
+| It interrupts itself | raise `BARGE_IN_MARGIN` (try 3), move the mic away from the speaker, or `ECHO_MODE=mute` |
 | The session ends in the middle of a long question | lower `SPEECH_RMS` or raise `IDLE_TIMEOUT` |
 | Pi's IP changed | `hostname -I` on the Pi, or use `gemini-pi.local` |
 | Reboot or power off the Pi | `sudo reboot` / `sudo shutdown now` (wait for the green light to stop before unplugging) |

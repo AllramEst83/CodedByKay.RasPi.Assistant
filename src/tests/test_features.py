@@ -386,3 +386,125 @@ def test_dropped_mic_frames_are_reported():
                             log=lines.append)
     asyncio.run(conv.run())
     assert any(l.startswith("[Warn] Dropped") for l in lines)
+
+
+# --- echo gate: interrupting without headphones ---------------------------------------------------------------------
+
+def run_gate(gate, frames, start=0.0, dt=0.04):
+    """frames: (mic_rms, playback_rms) per 40 ms frame. Returns the list of allow() results."""
+    return [gate.allow(mic, ref, start + i * dt) for i, (mic, ref) in enumerate(frames)]
+
+
+def test_gate_passes_everything_when_nothing_is_playing():
+    from assistant.echo import EchoGate
+
+    assert all(run_gate(EchoGate(), [(30, 0)] * 10 + [(2000, 0)] * 10))
+
+
+def test_gate_blocks_pure_echo_but_lets_the_user_through():
+    from assistant.echo import EchoGate
+
+    gate = EchoGate()
+    echo_only = [(900, 3000)] * 20                 # the mic hears 30% of what the speaker plays
+    user_over = [(900 + 4000, 3000)] * 15          # ...then the user speaks over it
+    out = run_gate(gate, echo_only + user_over)
+    assert not any(out[:20])                       # echo (including the calibration frames) is never sent
+    assert all(out[20:])                            # the user is
+    assert 0.25 < gate.echo_ratio < 0.35
+
+
+def test_gate_keeps_blocking_echo_when_the_volume_changes():
+    from assistant.echo import EchoGate
+
+    gate = EchoGate()
+    frames = [(900, 3000)] * 10 + [(1800, 6000)] * 10 + [(450, 1500)] * 10  # same 30% ratio at three volumes
+    assert not any(run_gate(gate, frames))
+
+
+def test_gate_with_headphones_lets_normal_speech_through():
+    from assistant.echo import EchoGate
+
+    gate = EchoGate()
+    out = run_gate(gate, [(15, 3000)] * 12 + [(1500, 3000)] * 6)  # no echo at all, then speech
+    assert not any(out[:5]) and all(out[12:])                      # only the first frames (learning) are lost
+
+
+def test_gate_ignores_a_loud_room_that_is_not_speech_over_echo():
+    from assistant.echo import EchoGate
+
+    gate = EchoGate(speech_rms=500)
+    assert not any(run_gate(gate, [(300, 3000)] * 20))  # a mic level below the speech floor is never forwarded
+
+
+def test_gate_holds_open_for_the_whole_phrase():
+    from assistant.echo import EchoGate
+
+    gate = EchoGate(hold_s=0.4)
+    out = run_gate(gate, [(900, 3000)] * 10 + [(5000, 3000)] + [(900, 3000)] * 5 + [(900, 3000)] * 10)
+    assert out[10] and all(out[11:15])      # kept open for ~0.4 s after the user's last loud frame
+    assert not any(out[22:])                # then closed again: it is echo
+
+
+def test_gate_compensates_for_playback_delay():
+    from assistant.echo import EchoGate
+
+    gate = EchoGate(delay_s=0.5)
+    # playback starts at frame 0, but the room only hears it (and the mic only picks it up) from frame 13 on
+    frames = [(20, 3000)] * 13 + [(900, 3000)] * 20
+    out = run_gate(gate, frames)
+    assert not any(out[13:])                # delayed echo is recognised as echo, not as the user
+
+
+def test_gate_stops_gating_after_the_tail():
+    from assistant.echo import EchoGate
+
+    gate = EchoGate(tail_s=0.6)
+    out = run_gate(gate, [(900, 3000)] * 10 + [(700, 0)] * 30)  # playback ends; leftover reverb, then quiet room
+    assert not out[11]                       # still within the tail: not forwarded
+    assert all(out[-5:])                     # long after: the mic is open again
+
+
+def _constant_mic(level, seconds, echo_first=0.6, echo_level=900):
+    """Only echo for the first `echo_first` s (the gate learns it), then `level`."""
+    from array import array
+
+    pcm = array("h", [echo_level] * int(16000 * echo_first) + [level] * int(16000 * (seconds - echo_first)))
+    return FakeMic(pcm.tobytes(), speed=1)
+
+
+def _gate_session(mic_level, speaker_level=3000, busy_for=2.2, mic_seconds=3.0):
+    import time as t
+
+    class Speaker(FakeSpeaker):
+        def __init__(self):
+            super().__init__()
+            self.busy_until = t.monotonic() + busy_for
+            self.level_value = speaker_level
+
+    session = FakeSession([])
+    cfg = replace(CFG, idle_timeout=2.5, echo_mode="gate", speech_rms=500, mute_tail_ms=600)
+    conv = LiveConversation(cfg, factory_for(session), _constant_mic(mic_level, mic_seconds), Speaker(), log=lambda s: None)
+    asyncio.run(conv.run())
+    return [bool(any(kw["audio"].data)) for kw in session.sent]
+
+
+def test_session_does_not_forward_the_assistants_own_echo():
+    sent = _gate_session(mic_level=900)           # 30% of 3000: just echo
+    assert not any(sent[: int(2.0 / 0.04)])       # nothing leaked while the assistant was speaking
+
+
+def test_session_forwards_the_user_speaking_over_the_assistant():
+    sent = _gate_session(mic_level=5000)          # much louder than the echo would be
+    during = sent[: int(2.0 / 0.04)]
+    assert not any(during[: int(0.5 / 0.04)])     # the echo-only start is not sent
+    tail = during[int(0.8 / 0.04):]
+    assert sum(tail) > 0.8 * len(tail)            # the user speaking over it is: Gemini can be interrupted
+
+
+def test_gate_recovers_when_the_user_was_talking_while_it_learned_the_echo():
+    from assistant.echo import EchoGate
+
+    gate = EchoGate()
+    out = run_gate(gate, [(5000, 3000)] * 10 + [(900, 3000)] * 10 + [(5000 + 900, 3000)] * 6)
+    assert gate.echo_ratio is not None and gate.echo_ratio < 0.5   # came down from 1.67 to the real ~0.3
+    assert all(out[-6:])                                           # so the user is heard afterwards

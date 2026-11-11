@@ -46,6 +46,12 @@ class Config:
     wake_phrases: tuple[str, ...] = ("hey gemini", "hey assistant")
     audio_in_device: str | None = None  # index or name substring
     audio_out_device: str | None = None
+    # What to do with the mic while the assistant speaks (its own voice leaks into the mic):
+    #   "gate" - send the mic only when it is clearly louder than the expected echo, so you can interrupt (default)
+    #   "mute" - send silence while it speaks and for mute_tail_ms after (safest, but no interrupting)
+    #   "off"  - send the mic as is (headphones)
+    echo_mode: str = "gate"
+    barge_in_margin: float = 2.0  # gate: the mic must be this many times louder than the expected echo to count as you
     mute_tail_ms: int = 600  # keep ignoring the mic this long after the speaker stops (reverb, speaker and network delay)
     mute_mic_while_speaking: bool = False  # set True if the speaker echoes into the mic
     speech_rms: float = 500.0  # mic level (16-bit RMS) counted as speech for the idle timer; raise if room noise keeps sessions open
@@ -93,6 +99,8 @@ def load_config(env_path: str | Path | None = None) -> Config:
         audio_in_device=os.getenv("AUDIO_IN_DEVICE") or None,
         audio_out_device=os.getenv("AUDIO_OUT_DEVICE") or None,
         mute_mic_while_speaking=os.getenv("MUTE_MIC_WHILE_SPEAKING", "").lower() in ("1", "true", "yes"),
+        echo_mode=os.getenv("ECHO_MODE", "gate").strip().lower(),
+        barge_in_margin=float(os.getenv("BARGE_IN_MARGIN", "2.0")),
         mute_tail_ms=int(os.getenv("MUTE_TAIL_MS", "600")),
         speech_rms=float(os.getenv("SPEECH_RMS", "500")),
         wake_confirm_ms=int(os.getenv("WAKE_CONFIRM_MS", "200")),

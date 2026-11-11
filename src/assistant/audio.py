@@ -207,6 +207,8 @@ class PyAudioSpeaker:
     The device may run at another rate or as stereo; conversion happens in write().
     """
 
+    playback_delay = 0.05  # seconds between writing a piece and hearing it (the device buffer)
+
     def __init__(self, device: str | None = None):
         self._pa = pyaudio_mod().PyAudio()
         index, self.device_name = _choose_device(self._pa, device, False)
@@ -220,6 +222,7 @@ class PyAudioSpeaker:
         self._lock = threading.Lock()
         self._gen = 0
         self._pending = 0
+        self._level, self._level_at = 0.0, 0.0  # loudness of the piece being played, for the echo gate
         self._closed = False
         threading.Thread(target=self._run, daemon=True).start()
 
@@ -252,6 +255,7 @@ class PyAudioSpeaker:
                 with self._lock:
                     if gen != self._gen:
                         break
+                self._level, self._level_at = _rms_bytes(piece), time.monotonic()
                 self._stream.write(piece)
                 with self._lock:
                     if gen == self._gen:
@@ -270,6 +274,10 @@ class PyAudioSpeaker:
     def is_busy(self) -> bool:
         with self._lock:
             return self._pending > 0
+
+    def level(self) -> float:
+        """Loudness (16-bit RMS) of what is being played right now; 0 when nothing is playing."""
+        return self._level if self.is_busy() and time.monotonic() - self._level_at < 0.3 else 0.0
 
     def play_blocking(self, pcm: bytes, timeout: float = 10.0) -> None:
         self.write(pcm)
@@ -338,6 +346,8 @@ class _NoPortAudio:
 class StdioSpeaker(PyAudioSpeaker):
     """Reply audio goes to stdout as 24 kHz mono 16-bit PCM. Paced in real time so barge-in (clear) still works."""
 
+    playback_delay = 0.6  # the sink runs 0.25 s ahead, then the PC's output buffer and the network add more
+
     def __init__(self, out=None):
         import sys
 
@@ -370,6 +380,8 @@ class FakeSpeaker:
         self.chunks: list[bytes] = []
         self.cleared = 0
         self.busy_until = 0.0
+        self.level_value = 0.0  # tests set this to what the "speaker" is playing
+        self.playback_delay = 0.0
 
     @property
     def audio(self) -> bytes:
@@ -383,6 +395,9 @@ class FakeSpeaker:
 
     def is_busy(self) -> bool:
         return time.monotonic() < self.busy_until
+
+    def level(self) -> float:
+        return self.level_value if self.is_busy() else 0.0
 
     def play_blocking(self, pcm: bytes, timeout: float = 10.0) -> None:
         self.write(pcm)

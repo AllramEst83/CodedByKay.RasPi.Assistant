@@ -4,15 +4,13 @@
     python tools/pc_audio_bridge.py                      # talk to the assistant through the PC mic/speakers
     python tools/pc_audio_bridge.py --list-devices
     python tools/pc_audio_bridge.py --wake-test          # count wake-word triggers only (no Gemini calls, no cost)
-    python tools/pc_audio_bridge.py --headphones         # headphones: you can interrupt the assistant by speaking
     python tools/pc_audio_bridge.py --echo-check         # does the mic hear the speaker? (plays a quiet tone)
     python tools/pc_audio_bridge.py --from-wav in.wav --to-wav out.wav   # no hardware: stream a 16 kHz mono wav
     python tools/pc_audio_bridge.py --from-wav in.wav --to-wav out.wav --echo 0.6   # ...with simulated speaker echo
 
 The Pi runs `python -m assistant --remote-audio`: 16 kHz mono PCM goes up its stdin, 24 kHz mono PCM comes back on
-stdout, and its log lines come back on stderr (shown here). Speaker sound picked up by the mic makes the
-assistant hear itself and interrupt its own answers, so by default the Pi ignores the mic while it is speaking
-(you cannot interrupt it). With headphones there is no echo: pass --headphones to allow interrupting. Ctrl+C stops it.
+stdout, and its log lines come back on stderr (shown here). You can interrupt the assistant by speaking over it; the
+Pi tells your voice from the speaker's echo (see src/assistant/echo.py). Ctrl+C stops it.
 """
 from __future__ import annotations
 
@@ -43,8 +41,7 @@ def ssh_command(args) -> list[str]:
     cmd = ["ssh", "-o", "BatchMode=yes"]
     if args.key:
         cmd += ["-i", str(Path(args.key).expanduser()), "-o", "IdentitiesOnly=yes"]
-    mute = "" if args.headphones else "MUTE_MIC_WHILE_SPEAKING=true "  # PC speakers feed back into the PC mic
-    remote = f"cd ~/gemini-assistant && {mute}./venv/bin/python -m assistant --remote-audio"
+    remote = "cd ~/gemini-assistant && ./venv/bin/python -m assistant --remote-audio"
     if args.wake_test:
         remote += " --wake-test"
     return cmd + [args.host, remote]
@@ -129,10 +126,10 @@ def echo_check(in_device, out_device) -> int:
     info(f"Room level {base_level:.0f}; level while the tone played {tone_level:.0f} ({ratio:.1f}x)")
     if ratio > 2:
         print("[91m[Fail] The microphone hears the speaker. The assistant will hear itself and interrupt its own "
-              "answers. Use a headset whose mic is away from the speaker, pick the right devices with "
-              "--in-device/--out-device, or keep the default (mic muted while it speaks).[0m", file=sys.stderr)
+              "answers unless the echo gate separates it from your voice (ECHO_MODE=gate, the default). A headset, or "
+              "the right devices (--in-device/--out-device), removes the problem at the source.[0m", file=sys.stderr)
         return 1
-    print("[32m[Pass] The microphone does not hear the speaker: --headphones (interrupting) will work.[0m",
+    print("[32m[Pass] The microphone does not hear the speaker.[0m",
           file=sys.stderr)
     return 0
 
@@ -150,8 +147,6 @@ def main() -> int:
     ap.add_argument("--to-wav", help="save the reply audio to this wav instead of playing it")
     ap.add_argument("--wake-test", action="store_true",
                     help="only listen for the wake phrases and count triggers: no Gemini calls, no cost, no speaker")
-    ap.add_argument("--headphones", action="store_true",
-                    help="no speaker echo: the assistant listens while it speaks, so you can interrupt it")
     ap.add_argument("--echo", type=float, default=0.0, metavar="GAIN",
                     help="with --from-wav: mix the reply back into the mic at this level (0.6 is a loud echo)")
     ap.add_argument("--seconds", type=float, default=0, help="stop after N seconds (0 = until Ctrl+C)")
@@ -235,9 +230,6 @@ def main() -> int:
             info(f"Microphone: {name(mic)}")
         if speaker is not None:
             info(f"Speaker:    {name(speaker)}")
-        if not args.headphones and not args.wake_test:
-            info("The assistant ignores the microphone while it speaks (stops it hearing itself). "
-                 "With headphones or a headset, add --headphones to be able to interrupt it.")
     threading.Thread(target=reader, daemon=True).start()
     info("Bridge running. Say 'Hey Gemini' or 'Hey Assistant'. Ctrl+C to stop.")
     t0 = time.monotonic()
