@@ -128,10 +128,10 @@ def test_empty_greeting_text_turns_it_off(fake_espeak):
     assert feedback.greeting_audio(cfg, "hey assistant") is not None
 
 
-def test_default_greeting_is_a_short_yes_for_both_wake_phrases(fake_espeak):
+def test_default_greeting_is_online_for_both_wake_phrases(fake_espeak):
     cfg = _cfg()
-    assert feedback.greeting_audio(cfg, "hey gemini") == b"en:Yes?"
-    assert feedback.greeting_audio(cfg, "hey assistant") == b"en:Yes?"
+    assert feedback.greeting_audio(cfg, "hey gemini") == b"en:Online"
+    assert feedback.greeting_audio(cfg, "hey assistant") == b"en:Online"
 
 
 def test_greeting_is_none_without_espeak(monkeypatch):
@@ -147,7 +147,7 @@ def test_greeting_is_rendered_once(monkeypatch):
     monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000: calls.append(text) or b"x")
     for _ in range(3):
         feedback.greeting_audio(_cfg(), "hey gemini")
-    assert calls == ["Yes?"]
+    assert calls == ["Online"]
     feedback.speak_cached.cache_clear()
 
 
@@ -178,7 +178,7 @@ def test_run_once_plays_chime_then_greeting_and_mutes_the_mic_until_it_ends(fake
     mic = FakeMic(b"\x05\x00" * 40000, speed=1)
     app.run_once(_cfg(), mic, speaker, Detector(), factory_for(session), log=lambda s: None)
 
-    assert speaker.chunks[1] == b"en:Yes?"  # right after the chime
+    assert speaker.chunks[1] == b"en:Online"  # right after the chime
     frames = [kw["audio"].data for kw in session.sent]
     silent = [not any(f) for f in frames]
     assert silent[0] and not silent[-1]  # muted at first, open once the greeting ended

@@ -51,7 +51,7 @@ class Config:
     sleep_tool: bool = True  # saying "go to sleep" ends the conversation at once instead of waiting for the idle timeout
     # Spoken (robot voice) right after the wake chime, chosen by which wake phrase was heard. An empty text turns it off.
     # Keep it to one short word: it should end inside the wake_skip_ms window.
-    greetings: dict = field(default_factory=lambda: {"sv": "Ja?", "en": "Yes?"})
+    greetings: dict = field(default_factory=lambda: {"sv": "Ja?", "en": "Online"})
     greeting_map: dict = field(default_factory=lambda: {"hey gemini": "en", "hey assistant": "en"})  # phrase -> language
     feedback_lang: str = "sv"  # language of spoken error messages: sv or en
     error_voice: bool = True  # speak error messages (needs espeak-ng); tones always play
@@ -92,7 +92,7 @@ def load_config(env_path: str | Path | None = None) -> Config:
         google_search=os.getenv("GOOGLE_SEARCH", "true").lower() in ("1", "true", "yes"),
         sleep_tool=os.getenv("SLEEP_TOOL", "true").lower() in ("1", "true", "yes"),
         greetings={"sv": os.getenv("GREETING_SV", "Ja?").strip(),
-                   "en": os.getenv("GREETING_EN", "Yes?").strip()},
+                   "en": os.getenv("GREETING_EN", "Online").strip()},
         greeting_map=_parse_map(os.getenv("GREETING_MAP", "hey gemini:en,hey assistant:en")),
         feedback_lang=os.getenv("FEEDBACK_LANG", "sv").lower(),
         error_voice=os.getenv("ERROR_VOICE", "true").lower() in ("1", "true", "yes"),
