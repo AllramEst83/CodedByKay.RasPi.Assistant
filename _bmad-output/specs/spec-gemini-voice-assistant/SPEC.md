@@ -76,4 +76,4 @@ From a freshly flashed Pi, Kay says "Hey Gemini", hears the chime, asks a questi
 ## Open Questions
 
 - Which USB mic and speaker (or speakerphone) will be bought? Confirm ALSA recognises it and captures at 16 kHz.
-- Vosk false-trigger rate and idle CPU on the Pi are unmeasured until the mic arrives; if too high, fall back to a dedicated engine or tighten the grammar.
+- Vosk false-trigger rate is still unmeasured (one false trigger in four test clips, a small sample); if too high, tighten the grammar or fall back to a dedicated engine. Idle CPU is measured and fine: about 5% of one core, 56 °C, no throttling, 203 MB (Pi 5 8 GB, 2026-11-11).
