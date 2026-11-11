@@ -122,6 +122,8 @@ Settings live in `~/gemini-assistant/.env` on the Pi (permission `600`, never co
 | `AUDIO_IN_DEVICE`, `AUDIO_OUT_DEVICE` | system default | device index or part of its name (see `--list-devices`) |
 | `MUTE_MIC_WHILE_SPEAKING` | `false` | set `true` if the assistant interrupts itself because of echo |
 | `SPEECH_RMS` | `500` | mic level that counts as speech for the idle timer; raise it if room noise keeps sessions open |
+| `GREETING_SV`, `GREETING_EN` | `Nu är jag vaken`, `Now I am awake` | robot-voice greeting after the wake chime (needs `espeak-ng`); empty text turns that language's greeting off |
+| `GREETING_MAP` | `hey gemini:sv,hey assistant:en` | which wake phrase gets which greeting language |
 | `SLEEP_TOOL` | `true` | saying "go to sleep" (or "gå och lägg dig") ends the conversation at once with a goodbye and a falling chime; `false` turns it off |
 | `GOOGLE_SEARCH` | `true` | let Gemini search the web for current facts (weather, news, prices); `false` turns it off |
 | `WAKE_SKIP_MS` | `600` | audio dropped after the chime so the wake phrase's tail is not sent to Gemini |

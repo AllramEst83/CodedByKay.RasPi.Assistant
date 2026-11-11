@@ -99,3 +99,81 @@ def test_resample_48k_to_16k_keeps_a_tone_and_length():
 
 def test_resample_24k_to_48k_doubles_length():
     assert len(resample_pcm16(bytes(2400), 24000, 48000)) == 4800
+
+
+# --- wake greeting -----------------------------------------------------------------------------------------------
+
+def _cfg(**kw):
+    return Config(gemini_api_key="test", vosk_model_path="unused", idle_timeout=0.5, **kw)
+
+
+@pytest.fixture
+def fake_espeak(monkeypatch):
+    feedback.speak_cached.cache_clear()
+    monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000: f"{lang}:{text}".encode())
+    yield
+    feedback.speak_cached.cache_clear()
+
+
+def test_greeting_language_follows_the_wake_phrase(fake_espeak):
+    cfg = _cfg()
+    assert feedback.greeting_audio(cfg, "hey gemini") == b"sv:Nu \xc3\xa4r jag vaken"
+    assert feedback.greeting_audio(cfg, "Hey Assistant") == b"en:Now I am awake"
+    assert feedback.greeting_audio(cfg, "hey something else") is None
+
+
+def test_empty_greeting_text_turns_it_off(fake_espeak):
+    cfg = _cfg(greetings={"sv": "", "en": "Now I am awake"})
+    assert feedback.greeting_audio(cfg, "hey gemini") is None
+    assert feedback.greeting_audio(cfg, "hey assistant") is not None
+
+
+def test_greeting_is_none_without_espeak(monkeypatch):
+    feedback.speak_cached.cache_clear()
+    monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000: None)
+    assert feedback.greeting_audio(_cfg(), "hey gemini") is None
+    feedback.speak_cached.cache_clear()
+
+
+def test_greeting_is_rendered_once(monkeypatch):
+    feedback.speak_cached.cache_clear()
+    calls = []
+    monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000: calls.append(text) or b"x")
+    for _ in range(3):
+        feedback.greeting_audio(_cfg(), "hey gemini")
+    assert calls == ["Nu är jag vaken"]
+    feedback.speak_cached.cache_clear()
+
+
+def test_parse_map():
+    from assistant.config import _parse_map
+
+    assert _parse_map("Hey Gemini:sv, hey assistant : en,junk") == {"hey gemini": "sv", "hey assistant": "en"}
+
+
+def test_run_once_plays_chime_then_greeting_and_mutes_the_mic_until_it_ends(fake_espeak):
+    import time
+
+    from assistant import app
+    from test_session_fake import FakeSession, factory_for
+
+    class Speaker(FakeSpeaker):
+        def write(self, pcm):
+            super().write(pcm)
+            if pcm.startswith(b"sv:"):
+                self.busy_until = time.monotonic() + 1.0  # the greeting takes a second to play
+
+    class Detector:
+        def reset(self): pass
+        def feed(self, frame): return "hey gemini"
+
+    session = FakeSession([])
+    speaker = Speaker()
+    mic = FakeMic(b"\x05\x00" * 40000, speed=1)
+    app.run_once(_cfg(), mic, speaker, Detector(), factory_for(session), log=lambda s: None)
+
+    assert speaker.chunks[1] == "sv:Nu är jag vaken".encode()  # right after the chime
+    frames = [kw["audio"].data for kw in session.sent]
+    silent = [not any(f) for f in frames]
+    assert silent[0] and not silent[-1]  # muted at first, open once the greeting ended
+    assert silent.index(False) > 0 and all(not s for s in silent[silent.index(False):])

@@ -49,9 +49,18 @@ class Config:
     wake_skip_ms: int = 600  # audio discarded after the chime so the wake phrase's tail is not sent to Gemini
     google_search: bool = True  # let Gemini search the web for current facts (news, weather, prices, dates)
     sleep_tool: bool = True  # saying "go to sleep" ends the conversation at once instead of waiting for the idle timeout
+    # Spoken (robot voice) right after the wake chime, chosen by which wake phrase was heard. An empty text turns it off.
+    greetings: dict = field(default_factory=lambda: {"sv": "Nu är jag vaken", "en": "Now I am awake"})
+    greeting_map: dict = field(default_factory=lambda: {"hey gemini": "sv", "hey assistant": "en"})  # phrase -> language
     feedback_lang: str = "sv"  # language of spoken error messages: sv or en
     error_voice: bool = True  # speak error messages (needs espeak-ng); tones always play
     system_prompt: str = SYSTEM_PROMPT
+
+
+def _parse_map(text: str) -> dict[str, str]:
+    """'hey gemini:sv,hey assistant:en' -> {'hey gemini': 'sv', 'hey assistant': 'en'}"""
+    pairs = (item.rsplit(":", 1) for item in text.split(",") if ":" in item)
+    return {phrase.strip().lower(): lang.strip().lower() for phrase, lang in pairs}
 
 
 def load_config(env_path: str | Path | None = None) -> Config:
@@ -81,6 +90,9 @@ def load_config(env_path: str | Path | None = None) -> Config:
         wake_skip_ms=int(os.getenv("WAKE_SKIP_MS", "600")),
         google_search=os.getenv("GOOGLE_SEARCH", "true").lower() in ("1", "true", "yes"),
         sleep_tool=os.getenv("SLEEP_TOOL", "true").lower() in ("1", "true", "yes"),
+        greetings={"sv": os.getenv("GREETING_SV", "Nu är jag vaken").strip(),
+                   "en": os.getenv("GREETING_EN", "Now I am awake").strip()},
+        greeting_map=_parse_map(os.getenv("GREETING_MAP", "hey gemini:sv,hey assistant:en")),
         feedback_lang=os.getenv("FEEDBACK_LANG", "sv").lower(),
         error_voice=os.getenv("ERROR_VOICE", "true").lower() in ("1", "true", "yes"),
     )

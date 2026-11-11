@@ -12,6 +12,7 @@ import shutil
 import struct
 import subprocess
 import wave
+from functools import lru_cache
 from typing import Callable
 
 from .audio import resample_pcm16
@@ -107,6 +108,25 @@ def speak(text: str, lang: str = "sv", rate: int = OUTPUT_RATE) -> bytes | None:
     except (subprocess.SubprocessError, wave.Error, OSError):
         return None
     return resample_pcm16(pcm, src_rate, rate)
+
+
+@lru_cache(maxsize=32)
+def speak_cached(text: str, lang: str) -> bytes | None:
+    """speak() remembered per (text, language), so a greeting is rendered once and then plays instantly."""
+    return speak(text, lang)
+
+
+def greeting_audio(cfg, phrase: str) -> bytes | None:
+    """The spoken greeting for the wake phrase that was heard, or None (no text set, unknown phrase, or no espeak-ng)."""
+    lang = cfg.greeting_map.get(phrase.lower())
+    text = cfg.greetings.get(lang, "") if lang else ""
+    return speak_cached(text, lang) if text else None
+
+
+def prewarm_greetings(cfg) -> None:
+    """Render every greeting at startup so the first wake is as fast as the rest."""
+    for phrase in cfg.greeting_map:
+        greeting_audio(cfg, phrase)
 
 
 def announce(kind: str, speaker, lang: str = "sv", voice: bool = True,

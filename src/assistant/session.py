@@ -93,6 +93,7 @@ class LiveConversation:
         self.transcript: dict[str, list[str]] = {"user": [], "assistant": []}
         self.last_error: BaseException | None = None  # set when run() ends with "error: ..."
         self._turn: dict[str, list[str]] = {"user": [], "assistant": []}  # text of the turn in progress, for the log
+        self.mute_mic_during_greeting = False  # set by the app: send silence until the wake greeting has finished playing
         self._sleep_at: float | None = None  # when Gemini called go_to_sleep
         self._sleep_turn_done = False  # the turn that followed the call has completed (goodbye finished)
 
@@ -160,7 +161,10 @@ class LiveConversation:
     async def _send(self, session, audio_q: asyncio.Queue, timer: IdleTimer) -> str:
         while True:
             data = await audio_q.get()
-            if self.cfg.mute_mic_while_speaking and self.speaker.is_busy():
+            busy = self.speaker.is_busy()
+            if self.mute_mic_during_greeting and not busy:
+                self.mute_mic_during_greeting = False  # the greeting is done; open the mic for real
+            if (self.cfg.mute_mic_while_speaking or self.mute_mic_during_greeting) and busy:
                 data = bytes(len(data))  # keep the stream flowing but silent
             elif _rms(data) > self.cfg.speech_rms:
                 timer.touch()  # local voice check: Gemini's transcript arrives too late to hold the timer open

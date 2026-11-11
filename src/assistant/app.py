@@ -26,9 +26,13 @@ def run_once(cfg: Config, mic, speaker, detector, client_factory, log: Callable[
     phrase = wait_for_wake(mic, detector, log)
     log(f"[Active] Heard '{phrase}'")
     speaker.play_blocking(generate_chime())
+    greeting = feedback.greeting_audio(cfg, phrase)
+    if greeting:
+        speaker.write(greeting)  # not blocking: it plays while the Live session connects
     for _ in range(cfg.wake_skip_ms // FRAME_MS):
         mic.read()  # drop the tail of the wake phrase (and any stale buffered audio) so Gemini never hears it
     conv = LiveConversation(cfg, client_factory, mic, speaker, log)
+    conv.mute_mic_during_greeting = bool(greeting)  # the greeting must not echo into the session
     reason = asyncio.run(conv.run())  # a fresh event loop (and client) per conversation
     if reason == "sleep":
         speaker.play_blocking(generate_chime(descending=True))
@@ -39,6 +43,7 @@ def run_once(cfg: Config, mic, speaker, detector, client_factory, log: Callable[
 
 
 def run_forever(cfg: Config, mic, speaker, detector, client_factory, log: Callable[[str], None] = default_log) -> None:
+    feedback.prewarm_greetings(cfg)
     try:
         while True:
             try:
