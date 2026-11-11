@@ -116,16 +116,22 @@ def fake_espeak(monkeypatch):
 
 
 def test_greeting_language_follows_the_wake_phrase(fake_espeak):
-    cfg = _cfg()
+    cfg = _cfg(greetings={"sv": "Nu är jag vaken", "en": "Now I am awake"}, greeting_map={"hey gemini": "sv", "hey assistant": "en"})
     assert feedback.greeting_audio(cfg, "hey gemini") == b"sv:Nu \xc3\xa4r jag vaken"
     assert feedback.greeting_audio(cfg, "Hey Assistant") == b"en:Now I am awake"
     assert feedback.greeting_audio(cfg, "hey something else") is None
 
 
 def test_empty_greeting_text_turns_it_off(fake_espeak):
-    cfg = _cfg(greetings={"sv": "", "en": "Now I am awake"})
+    cfg = _cfg(greetings={"sv": "", "en": "Yes?"}, greeting_map={"hey gemini": "sv", "hey assistant": "en"})
     assert feedback.greeting_audio(cfg, "hey gemini") is None
     assert feedback.greeting_audio(cfg, "hey assistant") is not None
+
+
+def test_default_greeting_is_a_short_yes_for_both_wake_phrases(fake_espeak):
+    cfg = _cfg()
+    assert feedback.greeting_audio(cfg, "hey gemini") == b"en:Yes?"
+    assert feedback.greeting_audio(cfg, "hey assistant") == b"en:Yes?"
 
 
 def test_greeting_is_none_without_espeak(monkeypatch):
@@ -141,7 +147,7 @@ def test_greeting_is_rendered_once(monkeypatch):
     monkeypatch.setattr(feedback, "speak", lambda text, lang="sv", rate=24000: calls.append(text) or b"x")
     for _ in range(3):
         feedback.greeting_audio(_cfg(), "hey gemini")
-    assert calls == ["Nu är jag vaken"]
+    assert calls == ["Yes?"]
     feedback.speak_cached.cache_clear()
 
 
@@ -160,7 +166,7 @@ def test_run_once_plays_chime_then_greeting_and_mutes_the_mic_until_it_ends(fake
     class Speaker(FakeSpeaker):
         def write(self, pcm):
             super().write(pcm)
-            if pcm.startswith(b"sv:"):
+            if pcm.startswith(b"en:"):
                 self.busy_until = time.monotonic() + 1.0  # the greeting takes a second to play
 
     class Detector:
@@ -172,8 +178,20 @@ def test_run_once_plays_chime_then_greeting_and_mutes_the_mic_until_it_ends(fake
     mic = FakeMic(b"\x05\x00" * 40000, speed=1)
     app.run_once(_cfg(), mic, speaker, Detector(), factory_for(session), log=lambda s: None)
 
-    assert speaker.chunks[1] == "sv:Nu är jag vaken".encode()  # right after the chime
+    assert speaker.chunks[1] == b"en:Yes?"  # right after the chime
     frames = [kw["audio"].data for kw in session.sent]
     silent = [not any(f) for f in frames]
     assert silent[0] and not silent[-1]  # muted at first, open once the greeting ended
     assert silent.index(False) > 0 and all(not s for s in silent[silent.index(False):])
+
+
+def test_trim_silence_keeps_the_speech_and_a_short_pad():
+    from array import array
+
+    quiet, loud = [0] * 2400, [5000, -5000] * 100  # 0.1 s of silence at 24 kHz, then speech, then silence
+    pcm = array("h", quiet + loud + quiet).tobytes()
+    out = array("h")
+    out.frombytes(feedback._trim_silence(pcm, 24000))
+    pad = 24000 * 30 // 1000
+    assert len(out) == len(loud) + 2 * pad
+    assert feedback._trim_silence(array("h", quiet).tobytes(), 24000) == array("h", quiet).tobytes()  # all silence: untouched

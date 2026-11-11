@@ -12,6 +12,7 @@ import shutil
 import struct
 import subprocess
 import wave
+from array import array
 from functools import lru_cache
 from typing import Callable
 
@@ -107,7 +108,18 @@ def speak(text: str, lang: str = "sv", rate: int = OUTPUT_RATE) -> bytes | None:
             src_rate, pcm = w.getframerate(), w.readframes(w.getnframes())
     except (subprocess.SubprocessError, wave.Error, OSError):
         return None
-    return resample_pcm16(pcm, src_rate, rate)
+    return _trim_silence(resample_pcm16(pcm, src_rate, rate), rate)
+
+
+def _trim_silence(pcm: bytes, rate: int, threshold: int = 400, pad_ms: int = 30) -> bytes:
+    """Cut the silence espeak-ng leaves before and after the speech, keeping a short pad."""
+    a = array("h")
+    a.frombytes(pcm[: len(pcm) // 2 * 2])
+    loud = [i for i, s in enumerate(a) if abs(s) > threshold]
+    if not loud:
+        return pcm
+    pad = rate * pad_ms // 1000
+    return a[max(0, loud[0] - pad): min(len(a), loud[-1] + 1 + pad)].tobytes()
 
 
 @lru_cache(maxsize=32)
