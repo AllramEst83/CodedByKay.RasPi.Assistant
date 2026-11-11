@@ -17,6 +17,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--list-devices", action="store_true", help="show audio devices and exit")
     ap.add_argument("--simulate", metavar="IN.wav", help="run once using a 16 kHz mono wav as the microphone")
     ap.add_argument("--out", metavar="OUT.wav", default="/tmp/sim_out.wav", help="where --simulate saves the reply audio")
+    ap.add_argument("--play", action="store_true", help="with --simulate: play the reply on the real speaker")
     args = ap.parse_args(argv)
 
     if args.list_devices:
@@ -32,10 +33,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.simulate:
         mic = FakeMic(read_wav_pcm16(args.simulate, INPUT_RATE))
-        speaker = FakeSpeaker()
-        conv = app.run_once(cfg, mic, speaker, detector, factory)
-        write_wav_pcm16(args.out, speaker.audio, OUTPUT_RATE)
-        print(f"Saved {len(speaker.audio) / (OUTPUT_RATE * 2):.1f}s of reply audio to {args.out}")
+        if args.play:  # real speaker, so the reply can be heard; nothing is saved
+            speaker = PyAudioSpeaker(cfg.audio_out_device)
+            try:
+                conv = app.run_once(cfg, mic, speaker, detector, factory)
+            finally:
+                speaker.close()
+            print("Played the reply on the speaker")
+        else:
+            speaker = FakeSpeaker()
+            conv = app.run_once(cfg, mic, speaker, detector, factory)
+            write_wav_pcm16(args.out, speaker.audio, OUTPUT_RATE)
+            print(f"Saved {len(speaker.audio) / (OUTPUT_RATE * 2):.1f}s of reply audio to {args.out}")
         print("User said:     ", "".join(conv.transcript["user"]))
         print("Assistant said:", "".join(conv.transcript["assistant"]))
         return 0
