@@ -55,7 +55,7 @@ A vision to realize: Kay wants a hands-free, voice-only Gemini assistant on a Ra
 
 - No screen or UI.
 - No multi-room or multi-user support.
-- No tool use or smart-home control.
+- No custom tool use or smart-home control. Google Search grounding (built into the Live API, `GOOGLE_SEARCH`) is allowed so answers can use current facts.
 - No Docker or web-server role for the Pi.
 - No cloud-based wake-word detection.
 - No vendor-hosted or account-bound wake-word engine (e.g. Picovoice).

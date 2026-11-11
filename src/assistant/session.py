@@ -26,6 +26,8 @@ def build_live_config(cfg: Config) -> types.LiveConnectConfig:
         ),
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
+        # Google Search grounding runs on Google's side; the model decides when a question needs the web.
+        tools=[types.Tool(google_search=types.GoogleSearch())] if cfg.google_search else None,
     )
 
 

@@ -110,6 +110,7 @@ Settings live in `~/gemini-assistant/.env` on the Pi (permission `600`, never co
 | `AUDIO_IN_DEVICE`, `AUDIO_OUT_DEVICE` | system default | device index or part of its name (see `--list-devices`) |
 | `MUTE_MIC_WHILE_SPEAKING` | `false` | set `true` if the assistant interrupts itself because of echo |
 | `SPEECH_RMS` | `500` | mic level that counts as speech for the idle timer; raise it if room noise keeps sessions open |
+| `GOOGLE_SEARCH` | `true` | let Gemini search the web for current facts (weather, news, prices); `false` turns it off |
 | `WAKE_SKIP_MS` | `600` | audio dropped after the chime so the wake phrase's tail is not sent to Gemini |
 | `ERROR_VOICE` | `true` | speak error messages (needs `espeak-ng`); tones always play |
 | `FEEDBACK_LANG` | `sv` | language of spoken errors: `sv` or `en` |
