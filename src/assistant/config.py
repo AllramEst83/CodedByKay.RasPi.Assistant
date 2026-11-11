@@ -48,6 +48,7 @@ class Config:
     audio_out_device: str | None = None
     mute_mic_while_speaking: bool = False  # set True if the speaker echoes into the mic
     speech_rms: float = 500.0  # mic level (16-bit RMS) counted as speech for the idle timer; raise if room noise keeps sessions open
+    wake_confirm_ms: int = 200  # after a wake-phrase match, listen this long and confirm with a final result (0 = off): fewer false triggers
     wake_skip_ms: int = 600  # audio discarded after the chime so the wake phrase's tail is not sent to Gemini
     google_search: bool = True  # let Gemini search the web for current facts (news, weather, prices, dates)
     timer_tool: bool = True  # "set a timer for 5 minutes": Gemini starts timers that ring on the device
@@ -92,6 +93,7 @@ def load_config(env_path: str | Path | None = None) -> Config:
         audio_out_device=os.getenv("AUDIO_OUT_DEVICE") or None,
         mute_mic_while_speaking=os.getenv("MUTE_MIC_WHILE_SPEAKING", "").lower() in ("1", "true", "yes"),
         speech_rms=float(os.getenv("SPEECH_RMS", "500")),
+        wake_confirm_ms=int(os.getenv("WAKE_CONFIRM_MS", "200")),
         wake_skip_ms=int(os.getenv("WAKE_SKIP_MS", "600")),
         google_search=os.getenv("GOOGLE_SEARCH", "true").lower() in ("1", "true", "yes"),
         sleep_tool=os.getenv("SLEEP_TOOL", "true").lower() in ("1", "true", "yes"),

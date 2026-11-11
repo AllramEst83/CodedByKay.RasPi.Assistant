@@ -116,8 +116,8 @@ spec this was built from are in `_bmad-output/specs/spec-gemini-voice-assistant/
 ## Status
 
 Built and tested without real audio hardware: wake word, Live conversations in Swedish and English, search,
-timers, sleep, error feedback, PC bridge. Still to verify on the Pi's own mic and speaker: the false-trigger
-rate of the wake word (the English model can mishear Swedish speech as "hey assistant"), speaker echo, and
-barge-in.
+timers, sleep, error feedback, PC bridge. The wake word is confirmed before it fires, because the English model
+can mishear Swedish speech as "hey assistant" (12 of 81 look-alike test sentences falsely woke it; now 1).
+Still to verify on the Pi's own mic and speaker: the false-trigger rate with real speech, speaker echo, and barge-in.
 
 Personal, non-commercial home project.

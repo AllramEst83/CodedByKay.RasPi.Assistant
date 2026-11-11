@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
 
         return 1 if run_doctor(cfg, log, skip_audio=args.skip_audio, skip_api=args.skip_api) else 0
 
-    detector = WakeDetector(cfg.vosk_model_path, cfg.wake_phrases)
+    detector = WakeDetector(cfg.vosk_model_path, cfg.wake_phrases, confirm_ms=cfg.wake_confirm_ms)
     factory = partial(make_client, cfg)
 
     if args.wake_test:

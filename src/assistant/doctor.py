@@ -41,7 +41,7 @@ def check_vosk(cfg: Config) -> Result:
     if not Path(cfg.vosk_model_path).is_dir():
         return FAIL, f"Vosk model not found at {cfg.vosk_model_path}"
     t0 = time.monotonic()
-    detector = WakeDetector(cfg.vosk_model_path, cfg.wake_phrases)
+    detector = WakeDetector(cfg.vosk_model_path, cfg.wake_phrases, confirm_ms=cfg.wake_confirm_ms)
     load = time.monotonic() - t0
     t0 = time.monotonic()
     for _ in range(25):  # one second of silence

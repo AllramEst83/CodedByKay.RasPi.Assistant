@@ -102,6 +102,19 @@ is on; every `[Active]` line is a trigger, and the text it heard is shown, for e
 At the end it prints the number of triggers and triggers per minute. Anything that was not you saying a wake
 phrase is a false trigger.
 
+**Tuning the wake word.** The English model can mishear other speech as a wake phrase ("heter huvudstaden" as
+"hey assistant"), so a match is confirmed before it fires (`WAKE_CONFIRM_MS`). To compare strategies on a corpus of
+synthetic look-alike sentences (this costs a little Gemini TTS):
+
+```
+[Pi]  ./venv/bin/python tools/make_wake_corpus.py ; ./venv/bin/python tools/make_wake_corpus.py heldout ; ./venv/bin/python tools/make_wake_corpus.py followed
+[Pi]  ./venv/bin/python tools/eval_wake.py wake_corpus wake_corpus_heldout     # false triggers, hits and delay per strategy
+```
+
+Measured so far: without confirmation 12 of 81 look-alike sentences woke the detector; with the default 200 ms, 1
+did, and all real wake clips (alone, and followed straight by a question) still worked, at about +0.25 s delay.
+Synthetic voices are only a proxy: judge with your own voice using `--wake-test`.
+
 **Which audio device is used:** with `AUDIO_IN_DEVICE` / `AUDIO_OUT_DEVICE` empty, the first USB device is chosen
 (HDMI is skipped), and the log says which one at startup (`[Status] Microphone: ...`). If you have two USB devices
 (for example a USB mic and a USB sound card that also has a mic input), set the variable to part of the device
@@ -159,6 +172,7 @@ Settings live in `~/gemini-assistant/.env` on the Pi (permission `600`, never co
 | `TIMER_TOOL` | `true` | voice timers ("sätt en timer på fem minuter"); they ring with a tone and a spoken message, are kept in memory only (a restart forgets them), at most 10 at once; `false` turns it off |
 | `SLEEP_TOOL` | `true` | saying "go to sleep" (or "gå och lägg dig") ends the conversation at once with a goodbye and a falling chime; `false` turns it off |
 | `GOOGLE_SEARCH` | `true` | let Gemini search the web for current facts (weather, news, prices); `false` turns it off |
+| `WAKE_CONFIRM_MS` | `200` | after a wake match, listen this many ms longer and require a confirming final result; fewer false triggers for a small delay. `0` = off (fastest, most false triggers); `500` = strictest |
 | `WAKE_SKIP_MS` | `600` | audio dropped after the chime so the wake phrase's tail is not sent to Gemini |
 | `ERROR_VOICE` | `true` | speak error messages (needs `espeak-ng`); tones always play |
 | `FEEDBACK_LANG` | `sv` | language of spoken errors: `sv` or `en` |

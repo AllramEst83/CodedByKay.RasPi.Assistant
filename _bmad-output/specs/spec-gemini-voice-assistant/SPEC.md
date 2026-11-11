@@ -76,4 +76,4 @@ From a freshly flashed Pi, Kay says "Hey Gemini", hears the chime, asks a questi
 ## Open Questions
 
 - Which USB mic and speaker (or speakerphone) will be bought? Confirm ALSA recognises it and captures at 16 kHz.
-- Vosk false-trigger rate is still unmeasured (one false trigger in four test clips, a small sample); if too high, tighten the grammar or fall back to a dedicated engine. Idle CPU is measured and fine: about 5% of one core, 56 °C, no throttling, 203 MB (Pi 5 8 GB, 2026-11-11).
+- Vosk false triggers: on 81 synthetic look-alike sentences the plain partial-match detector woke 12 times; confirming each match with a forced final result 200 ms later (`WAKE_CONFIRM_MS`) cut that to 1 with no missed wake phrases (+0.25 s). Synthetic speech is only a proxy: re-measure with real speech (`--wake-test`) and tighten (`WAKE_CONFIRM_MS=500`) or switch engine if needed. Idle CPU is measured and fine: about 5% of one core, 56 °C, no throttling, 203 MB (Pi 5 8 GB, 2026-11-11).

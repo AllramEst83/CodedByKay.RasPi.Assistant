@@ -243,3 +243,95 @@ def test_run_doctor_reports_each_check_and_counts_failures(monkeypatch, tmp_path
     assert "[Warn] Spoken messages: missing" in text
     assert "[Fail] Network: OSError: no route" in text
     assert "2 passed" not in text and "3 passed, 1 warning(s), 1 failed" in lines[-1]
+
+
+# --- wake detector confirmation -----------------------------------------------------------------------------------
+
+class FakeRecognizer:
+    """Scripted Vosk stand-in: each frame is ('partial', text) or ('final', text); FinalResult returns `forced`."""
+
+    def __init__(self, script, forced=None):
+        self.script, self.forced, self.i, self.resets = list(script), list(forced or []), -1, 0
+        self.current = ("partial", "")
+
+    def AcceptWaveform(self, pcm):
+        self.i += 1
+        self.current = self.script[self.i] if self.i < len(self.script) else ("partial", "")
+        return self.current[0] == "final"
+
+    def PartialResult(self):
+        import json
+        return json.dumps({"partial": self.current[1]})
+
+    def Result(self):
+        import json
+        return json.dumps({"text": self.current[1]})
+
+    def FinalResult(self):
+        import json
+        return json.dumps({"text": self.forced.pop(0) if self.forced else ""})
+
+    def Reset(self):
+        self.resets += 1
+
+
+def detector(script, forced=None, confirm_ms=200):
+    from assistant.wake import WakeDetector
+
+    d = WakeDetector.__new__(WakeDetector)  # skip loading a Vosk model
+    d._phrases, d._rate, d.confirm_ms = ("hey gemini", "hey assistant"), 16000, confirm_ms
+    d._rec, d.last_text, d._pending, d._waited_ms = FakeRecognizer(script, forced), "", False, 0.0
+    return d
+
+
+FRAME = bytes(1280)  # 40 ms
+
+
+def run_frames(d, n):
+    return [d.feed(FRAME) for _ in range(n)]
+
+
+def test_wake_fires_only_after_the_confirmation_delay():
+    d = detector([("partial", ""), ("partial", "hey gemini")], forced=["hey gemini"])
+    out = run_frames(d, 12)
+    assert out.index("hey gemini") == 1 + 5  # the partial match at frame 1, confirmed 200 ms (5 frames) later
+    assert out.count("hey gemini") == 1
+
+
+def test_wake_is_dropped_when_the_final_result_does_not_confirm_it():
+    d = detector([("partial", "[unk] hey assistant")], forced=["[unk]"])
+    assert run_frames(d, 6) == [None] * 6  # the match at frame 0, rejected 200 ms later (frame 5)
+    assert d.last_text == "[unk]"  # the log shows what the confirming final result heard
+    assert run_frames(d, 6) == [None] * 6
+
+
+def test_detector_keeps_listening_after_a_rejected_match():
+    d = detector([("partial", "hey assistant")] + [("partial", "")] * 6 + [("partial", "hey gemini")], forced=["[unk]", "hey gemini"])
+    out = run_frames(d, 20)
+    assert [x for x in out if x] == ["hey gemini"]
+
+
+def test_confirm_ms_zero_fires_on_the_first_partial_match():
+    d = detector([("partial", "hey gemini")], confirm_ms=0)
+    assert d.feed(FRAME) == "hey gemini"
+
+
+def test_a_final_result_that_matches_fires_at_once():
+    d = detector([("final", "[unk] hey assistant")])
+    assert d.feed(FRAME) == "hey assistant"
+
+
+def test_reset_clears_a_pending_confirmation():
+    d = detector([("partial", "hey gemini")], forced=["hey gemini"])
+    d.feed(FRAME)
+    assert d._pending
+    d.reset()
+    assert not d._pending
+
+
+def test_a_confirmed_phrase_may_be_followed_by_other_speech():
+    for final in ("hey gemini [unk]", "hey gemini [unk] [unk]", "[unk] hey assistant [unk]"):
+        d = detector([("partial", "hey gemini")], forced=[final])
+        assert [x for x in run_frames(d, 8) if x], final
+    d = detector([("partial", "hey gemini")], forced=["[unk] hey [unk]"])  # no full phrase: still rejected
+    assert not [x for x in run_frames(d, 8) if x]

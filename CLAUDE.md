@@ -37,7 +37,7 @@ ssh $SSHO gemini-pi 'cd ~/gemini-assistant && ./venv/bin/python -m assistant --s
 - `feedback.py` — error classification (`classify`), tone patterns, espeak-ng speech (`speak`, `speak_cached`, wake greeting); `log.py` — colored tagged log lines; `timers.py` — `TimerManager` (voice timers, owned by `run_forever`, outlive conversations); `doctor.py` — `--doctor` checks.
 - Gemini tools (declared in `session._tools`, answered in `LiveConversation._answer_tools`; the Live API never answers tool calls by itself): Google Search (server side), `go_to_sleep`, `set_timer`/`cancel_timers`/`list_timers`.
 - Audio devices: empty `AUDIO_*_DEVICE` means the first USB device (`audio._choose_device`); streams open at 16/24 kHz mono, else the device rate and stereo, converting with `resample_pcm16`.
-- `app.wake_test` / `--wake-test` listens for the wake phrases only (no API calls). Known: the English Vosk model can hear Swedish ("heter huvudstaden") as `[unk] hey assistant` and trigger; real speech must be used to tune it (see `[Active] ... (heard as "...")` log lines).
+- `app.wake_test` / `--wake-test` listens for the wake phrases only (no API calls). Known: the English Vosk model can hear Swedish ("heter huvudstaden") as `[unk] hey assistant`, so `WakeDetector` confirms a partial match with a forced final result `WAKE_CONFIRM_MS` (200 ms) later and ignores trailing `[unk]` (`wake.py`); measured with `tools/make_wake_corpus.py` + `tools/eval_wake.py` on synthetic speech (12/81 false triggers -> 1/81, no misses). Real speech is still the judge (`[Active] ... (heard as "...")` log lines).
 
 ## Gemini Live gotchas (verified with google-genai 3.0.0)
 
