@@ -12,9 +12,9 @@ import shutil
 import struct
 import subprocess
 import wave
-from array import array
 from typing import Callable
 
+from .audio import resample_pcm16
 from .config import OUTPUT_RATE
 
 # kind -> (tone pattern as (Hz, seconds) pairs, spoken text per language)
@@ -105,26 +105,7 @@ def speak(text: str, lang: str = "sv", rate: int = OUTPUT_RATE) -> bytes | None:
             src_rate, pcm = w.getframerate(), w.readframes(w.getnframes())
     except (subprocess.SubprocessError, wave.Error, OSError):
         return None
-    return _resample(pcm, src_rate, rate)
-
-
-def _resample(pcm: bytes, src: int, dst: int) -> bytes:
-    """Linear-interpolation resample of 16-bit mono PCM (fine for short speech)."""
-    if src == dst:
-        return pcm
-    a = array("h")
-    a.frombytes(pcm[: len(pcm) // 2 * 2])
-    if not a:
-        return b""
-    n_out = int(len(a) * dst / src)
-    out = array("h")
-    for i in range(n_out):
-        pos = i * src / dst
-        j = int(pos)
-        frac = pos - j
-        nxt = a[j + 1] if j + 1 < len(a) else a[j]
-        out.append(int(a[j] + (nxt - a[j]) * frac))
-    return out.tobytes()
+    return resample_pcm16(pcm, src_rate, rate)
 
 
 def announce(kind: str, speaker, lang: str = "sv", voice: bool = True,

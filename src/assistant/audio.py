@@ -11,8 +11,15 @@ import struct
 import threading
 import time
 import wave
+from array import array
 
 from .config import FRAME_MS, INPUT_FRAME_BYTES, INPUT_RATE, OUTPUT_RATE
+
+
+def pyaudio_mod():
+    import pyaudio  # imported lazily: only the Pi has PortAudio
+
+    return pyaudio
 
 
 def generate_chime(rate: int = OUTPUT_RATE) -> bytes:
@@ -69,20 +76,83 @@ def list_devices() -> str:
         pa.terminate()
 
 
-class PyAudioMic:
-    def __init__(self, device: str | None = None):
-        import pyaudio
+def resample_pcm16(pcm: bytes, src: int, dst: int) -> bytes:
+    """Resample 16-bit mono PCM. Averages blocks first when downsampling (a cheap low-pass), then interpolates."""
+    if src == dst or not pcm:
+        return pcm
+    a = array("h")
+    a.frombytes(pcm[: len(pcm) // 2 * 2])
+    if not a:
+        return b""
+    if src >= 2 * dst:  # e.g. 48 kHz -> 16 kHz: average k samples so high frequencies do not alias
+        k = src // dst
+        a = array("h", (sum(a[i:i + k]) // k for i in range(0, len(a) - k + 1, k)))
+        src = src / k
+        if not a:
+            return b""
+    if src == dst:
+        return a.tobytes()
+    n_out = int(len(a) * dst / src)
+    out = array("h")
+    last = len(a) - 1
+    for i in range(n_out):
+        pos = i * src / dst
+        j = min(int(pos), last)
+        nxt = a[min(j + 1, last)]
+        out.append(int(a[j] + (nxt - a[j]) * (pos - j)))
+    return out.tobytes()
 
-        self._pa = pyaudio.PyAudio()
+
+def _open_stream(pa, want_rate: int, device_index: int | None, is_input: bool, frames_per_buffer: int | None = None):
+    """Open a mono stream at want_rate if the device allows it, else at its native rate, else as stereo.
+
+    Returns (stream, actual_rate, channels). USB sound cards often support only 44.1/48 kHz and/or stereo.
+    """
+    import pyaudio
+
+    info = (pa.get_device_info_by_index(device_index) if device_index is not None else
+            (pa.get_default_input_device_info() if is_input else pa.get_default_output_device_info()))
+    rates = [want_rate]
+    native = int(info["defaultSampleRate"])
+    for r in (native, 48000, 44100):
+        if r not in rates:
+            rates.append(r)
+    last_error: Exception | None = None
+    for channels in (1, 2):
+        for rate in rates:
+            kwargs = dict(format=pyaudio.paInt16, channels=channels, rate=rate)
+            if is_input:
+                kwargs.update(input=True, input_device_index=device_index)
+            else:
+                kwargs.update(output=True, output_device_index=device_index)
+            if frames_per_buffer:
+                kwargs["frames_per_buffer"] = frames_per_buffer * rate // want_rate
+            try:
+                return pa.open(**kwargs), rate, channels
+            except OSError as e:
+                last_error = e
+    raise OSError(f"Could not open {info['name']!r} for {'input' if is_input else 'output'} "
+                  f"(tried rates {rates}, mono and stereo): {last_error}")
+
+
+class PyAudioMic:
+    """Reads 16 kHz mono frames, converting from whatever rate and channel count the device needs."""
+
+    def __init__(self, device: str | None = None):
+        self._pa = pyaudio_mod().PyAudio()
         self._chunk = INPUT_FRAME_BYTES // 2
-        self._stream = self._pa.open(
-            format=pyaudio.paInt16, channels=1, rate=INPUT_RATE, input=True,
-            input_device_index=_find_device(self._pa, device, True),
-            frames_per_buffer=self._chunk,
-        )
+        self._stream, self._rate, self._channels = _open_stream(
+            self._pa, INPUT_RATE, _find_device(self._pa, device, True), True, self._chunk)
+        self._native_chunk = self._chunk * self._rate // INPUT_RATE
 
     def read(self) -> bytes:
-        return self._stream.read(self._chunk, exception_on_overflow=False)
+        data = self._stream.read(self._native_chunk, exception_on_overflow=False)
+        if self._channels == 2:  # keep the left channel
+            a = array("h")
+            a.frombytes(data)
+            data = a[0::2].tobytes()
+        data = resample_pcm16(data, self._rate, INPUT_RATE)
+        return data.ljust(INPUT_FRAME_BYTES, b"\x00")[:INPUT_FRAME_BYTES]  # exactly one frame
 
     def close(self) -> None:
         self._stream.stop_stream()
@@ -91,18 +161,17 @@ class PyAudioMic:
 
 
 class PyAudioSpeaker:
-    """Plays queued PCM in 50 ms pieces so clear() can cut playback quickly."""
+    """Plays queued 24 kHz mono PCM in 50 ms pieces so clear() can cut playback quickly.
 
-    PIECE = OUTPUT_RATE * 2 * 50 // 1000
+    The device may run at another rate or as stereo; conversion happens in write().
+    """
 
     def __init__(self, device: str | None = None):
-        import pyaudio
-
-        self._pa = pyaudio.PyAudio()
-        self._stream = self._pa.open(
-            format=pyaudio.paInt16, channels=1, rate=OUTPUT_RATE, output=True,
-            output_device_index=_find_device(self._pa, device, False),
-        )
+        self._pa = pyaudio_mod().PyAudio()
+        self._stream, self._rate, self._channels = _open_stream(
+            self._pa, OUTPUT_RATE, _find_device(self._pa, device, False), False)
+        self._piece = self._rate * 2 * self._channels * 50 // 1000  # bytes in 50 ms of device audio
+        self._piece -= self._piece % (2 * self._channels)
         self._q: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
         self._gen = 0
@@ -110,7 +179,19 @@ class PyAudioSpeaker:
         self._closed = False
         threading.Thread(target=self._run, daemon=True).start()
 
+    def _to_device(self, pcm: bytes) -> bytes:
+        pcm = resample_pcm16(pcm, OUTPUT_RATE, self._rate)
+        if self._channels == 2:  # duplicate mono into both channels
+            a = array("h")
+            a.frombytes(pcm[: len(pcm) // 2 * 2])
+            st = array("h", bytes(len(a) * 4))
+            st[0::2] = a
+            st[1::2] = a
+            pcm = st.tobytes()
+        return pcm
+
     def write(self, pcm: bytes) -> None:
+        pcm = self._to_device(pcm)
         with self._lock:
             gen = self._gen
             self._pending += len(pcm)
@@ -122,8 +203,8 @@ class PyAudioSpeaker:
                 gen, pcm = self._q.get(timeout=0.1)
             except queue.Empty:
                 continue
-            for i in range(0, len(pcm), self.PIECE):
-                piece = pcm[i:i + self.PIECE]
+            for i in range(0, len(pcm), self._piece):
+                piece = pcm[i:i + self._piece]
                 with self._lock:
                     if gen != self._gen:
                         break

@@ -8,7 +8,7 @@ import pytest
 from google.genai import errors
 
 from assistant import feedback
-from assistant.audio import FakeMic, FakeSpeaker
+from assistant.audio import FakeMic, FakeSpeaker, resample_pcm16
 from assistant.config import Config
 from assistant.session import LiveConversation
 
@@ -52,7 +52,7 @@ def test_every_kind_has_a_distinct_tone_and_both_languages():
 
 def test_resample_changes_length_proportionally():
     pcm = b"\x10\x00" * 2205  # 0.1 s at 22.05 kHz
-    out = feedback._resample(pcm, 22050, 24000)
+    out = resample_pcm16(pcm, 22050, 24000)
     assert len(out) // 2 == 2400
 
 
@@ -84,3 +84,18 @@ def test_connect_failure_sets_last_error_that_classifies_as_credits():
     reason = asyncio.run(conv.run())
     assert reason.startswith("error")
     assert feedback.classify(conv.last_error) == "credits"
+
+
+def test_resample_48k_to_16k_keeps_a_tone_and_length():
+    import math
+    from array import array
+
+    tone = array("h", (int(8000 * math.sin(2 * math.pi * 440 * i / 48000)) for i in range(4800)))  # 0.1 s
+    out = array("h")
+    out.frombytes(resample_pcm16(tone.tobytes(), 48000, 16000))
+    assert len(out) == 1600
+    assert max(out) > 6000  # amplitude survives the low-pass
+
+
+def test_resample_24k_to_48k_doubles_length():
+    assert len(resample_pcm16(bytes(2400), 24000, 48000)) == 4800
