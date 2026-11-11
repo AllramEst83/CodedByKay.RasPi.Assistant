@@ -335,3 +335,54 @@ def test_a_confirmed_phrase_may_be_followed_by_other_speech():
         assert [x for x in run_frames(d, 8) if x], final
     d = detector([("partial", "hey gemini")], forced=["[unk] hey [unk]"])  # no full phrase: still rejected
     assert not [x for x in run_frames(d, 8) if x]
+
+
+# --- echo protection ---------------------------------------------------------------------------------------------
+
+def _frames_sent(cfg, busy_for, mic_seconds=4.0):  # more audio than the session lasts, or the end is silence too
+    """Run a session where the speaker is 'busy' for `busy_for` s from the start; return which mic frames were silent."""
+    import time as t
+
+    class Speaker(FakeSpeaker):
+        def __init__(self):
+            super().__init__()
+            self.busy_until = t.monotonic() + busy_for
+
+    session = FakeSession([])
+    mic = FakeMic(b"\x05\x00" * int(16000 * mic_seconds), speed=1)
+    conv = LiveConversation(cfg, factory_for(session), mic, Speaker(), log=lambda s: None)
+    asyncio.run(conv.run())
+    return [not any(kw["audio"].data) for kw in session.sent]
+
+
+def test_mic_stays_muted_for_the_tail_after_the_speaker_stops():
+    cfg = replace(CFG, idle_timeout=2.0, mute_mic_while_speaking=True, mute_tail_ms=600)
+    silent = _frames_sent(cfg, busy_for=0.4)
+    assert 0.9 <= silent.index(False) * 0.04 <= 1.2  # 0.4 s of playback + 0.6 s tail, give or take a frame or two
+    assert not silent[-1]  # and the mic is open again afterwards
+
+
+def test_no_muting_at_all_when_it_is_not_enabled():
+    cfg = replace(CFG, idle_timeout=2.0, mute_mic_while_speaking=False, mute_tail_ms=600)
+    assert not any(_frames_sent(cfg, busy_for=0.5))
+
+
+def test_zero_tail_unmutes_as_soon_as_the_speaker_stops():
+    cfg = replace(CFG, idle_timeout=2.0, mute_mic_while_speaking=True, mute_tail_ms=0)
+    assert 0.3 <= _frames_sent(cfg, busy_for=0.4).index(False) * 0.04 <= 0.6
+
+
+def test_dropped_mic_frames_are_reported():
+    class SlowMic:  # produces frames much faster than the (blocked) sender can take them
+        def read(self):
+            return b"\x01\x00" * 640
+
+    class BlockedSession(FakeSession):
+        async def send_realtime_input(self, **kw):
+            await asyncio.sleep(5)  # the network is stuck
+
+    lines = []
+    conv = LiveConversation(replace(CFG, idle_timeout=0.8), factory_for(BlockedSession([])), SlowMic(), FakeSpeaker(),
+                            log=lines.append)
+    asyncio.run(conv.run())
+    assert any(l.startswith("[Warn] Dropped") for l in lines)

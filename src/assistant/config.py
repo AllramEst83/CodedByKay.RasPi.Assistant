@@ -46,6 +46,7 @@ class Config:
     wake_phrases: tuple[str, ...] = ("hey gemini", "hey assistant")
     audio_in_device: str | None = None  # index or name substring
     audio_out_device: str | None = None
+    mute_tail_ms: int = 600  # keep ignoring the mic this long after the speaker stops (reverb, speaker and network delay)
     mute_mic_while_speaking: bool = False  # set True if the speaker echoes into the mic
     speech_rms: float = 500.0  # mic level (16-bit RMS) counted as speech for the idle timer; raise if room noise keeps sessions open
     wake_confirm_ms: int = 200  # after a wake-phrase match, listen this long and confirm with a final result (0 = off): fewer false triggers
@@ -92,6 +93,7 @@ def load_config(env_path: str | Path | None = None) -> Config:
         audio_in_device=os.getenv("AUDIO_IN_DEVICE") or None,
         audio_out_device=os.getenv("AUDIO_OUT_DEVICE") or None,
         mute_mic_while_speaking=os.getenv("MUTE_MIC_WHILE_SPEAKING", "").lower() in ("1", "true", "yes"),
+        mute_tail_ms=int(os.getenv("MUTE_TAIL_MS", "600")),
         speech_rms=float(os.getenv("SPEECH_RMS", "500")),
         wake_confirm_ms=int(os.getenv("WAKE_CONFIRM_MS", "200")),
         wake_skip_ms=int(os.getenv("WAKE_SKIP_MS", "600")),

@@ -176,7 +176,7 @@ def test_run_once_plays_chime_then_greeting_and_mutes_the_mic_until_it_ends(fake
     session = FakeSession([])
     speaker = Speaker()
     mic = FakeMic(b"\x05\x00" * 40000, speed=1)
-    app.run_once(_cfg(), mic, speaker, Detector(), factory_for(session), log=lambda s: None)
+    app.run_once(_cfg(mute_tail_ms=0), mic, speaker, Detector(), factory_for(session), log=lambda s: None)
 
     assert speaker.chunks[1] == b"en:Online"  # right after the chime
     frames = [kw["audio"].data for kw in session.sent]

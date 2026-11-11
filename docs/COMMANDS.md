@@ -57,7 +57,7 @@ Log lines are tagged and colored (in a terminal and in the audio bridge; not in 
 | `[Feedback]` | black on yellow | an error was announced out loud |
 | `[Error]` | white on red | something failed, with the error text |
 | `[Timer]` | bold cyan | a voice timer was set, cancelled or went off |
-| `[Pass]` `[Warn]` `[Fail]` | green, yellow, red | results of `--doctor` |
+| `[Pass]` `[Warn]` `[Fail]` | green, yellow, red | results of `--doctor`; `[Warn] Dropped N mic frame(s)` means the connection was too slow and part of your speech was lost |
 
 ## Run it by hand (without the service)
 
@@ -142,6 +142,21 @@ Use this to test the assistant before the Pi has its own mic and speaker. The PC
 
 Say "Hey Gemini" or "Hey Assistant" and ask a question. The Pi's log lines appear in the same window. Ctrl+C stops it.
 
+**Echo: the assistant hearing itself.** If sound from the PC speakers reaches the microphone, Gemini takes its own
+answer for you speaking, interrupts itself and starts the answer again (you see `[You]` lines with fragments of the
+answer, such as "grand theft", followed by `[Interrupted]`). By default the bridge therefore makes the Pi ignore the
+mic while it speaks (plus `MUTE_TAIL_MS`, 600 ms, afterwards); the downside is that you cannot interrupt it. Check
+your setup, then choose:
+
+```
+python src/tools/pc_audio_bridge.py --echo-check      # plays a quiet tone; [Pass] = the mic does not hear the speaker
+python src/tools/pc_audio_bridge.py --headphones      # only if the check passes: the mic stays open, so you can interrupt
+```
+
+The bridge prints which microphone and speaker it opened. If they are not your headset, run `--list-devices` and
+pass `--in-device` and `--out-device` (a number or part of the name). On the Pi itself the same protection is
+`MUTE_MIC_WHILE_SPEAKING=true` in `.env`.
+
 Options:
 
 ```
@@ -164,6 +179,7 @@ Settings live in `~/gemini-assistant/.env` on the Pi (permission `600`, never co
 | `IDLE_TIMEOUT` | `8` | seconds of silence before the session closes |
 | `WAKE_PHRASES` | `hey gemini,hey assistant` | comma-separated; the words must exist in the Vosk model |
 | `AUDIO_IN_DEVICE`, `AUDIO_OUT_DEVICE` | first USB device | device index or part of its name (see `--list-devices`); `default` = the system default |
+| `MUTE_TAIL_MS` | `600` | while muting (greeting, or `MUTE_MIC_WHILE_SPEAKING`), keep ignoring the mic this long after the speaker stops (room reverb, network and playback delay) |
 | `MUTE_MIC_WHILE_SPEAKING` | `false` | set `true` if the assistant interrupts itself because of echo |
 | `SPEECH_RMS` | `500` | mic level that counts as speech for the idle timer; raise it if room noise keeps sessions open |
 | `GREETING_EN`, `GREETING_SV` | `Online`, `Ja?` | robot-voice greeting after the wake chime (needs `espeak-ng`); empty text turns that language's greeting off |

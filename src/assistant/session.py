@@ -116,6 +116,7 @@ class LiveConversation:
         self.transcript: dict[str, list[str]] = {"user": [], "assistant": []}
         self.last_error: BaseException | None = None  # set when run() ends with "error: ..."
         self._turn: dict[str, list[str]] = {"user": [], "assistant": []}  # text of the turn in progress, for the log
+        self._last_busy = float("-inf")  # when the speaker last had audio queued
         self.mute_mic_during_greeting = False  # set by the app: send silence until the wake greeting has finished playing
         self._sleep_at: float | None = None  # when Gemini called go_to_sleep
         self._sleep_turn_done = False  # the turn that followed the call has completed (goodbye finished)
@@ -135,11 +136,14 @@ class LiveConversation:
         audio_q: asyncio.Queue = asyncio.Queue(maxsize=100)
         stop = threading.Event()
 
+        dropped = 0
+
         def put(data: bytes) -> None:
+            nonlocal dropped
             try:
                 audio_q.put_nowait(data)
             except asyncio.QueueFull:
-                pass  # drop rather than lag behind real time
+                dropped += 1  # drop rather than lag behind real time (the network is too slow for the mic stream)
 
         def mic_worker() -> None:
             while not stop.is_set():
@@ -178,16 +182,23 @@ class LiveConversation:
             stop.set()
             await loop.run_in_executor(None, thread.join, 1.0)
         self._flush_turn()  # anything said in a turn that never completed
+        if dropped:
+            self.log(f"[Warn] Dropped {dropped} mic frame(s) ({dropped * 0.04:.1f} s of audio): the connection was too slow")
         self.log(f"[Status] Live session closed ({reason})")
         return reason
 
     async def _send(self, session, audio_q: asyncio.Queue, timer: IdleTimer) -> str:
         while True:
             data = await audio_q.get()
+            now = self._clock()
             busy = self.speaker.is_busy()
-            if self.mute_mic_during_greeting and not busy:
+            if busy:
+                self._last_busy = now
+            # "speaking" while audio is playing and for mute_tail_ms after the last sample: room reverb, network and playback delay
+            echo_window = busy or now - self._last_busy < self.cfg.mute_tail_ms / 1000
+            if self.mute_mic_during_greeting and not echo_window:
                 self.mute_mic_during_greeting = False  # the greeting is done; open the mic for real
-            if (self.cfg.mute_mic_while_speaking or self.mute_mic_during_greeting) and busy:
+            if (self.cfg.mute_mic_while_speaking or self.mute_mic_during_greeting) and echo_window:
                 data = bytes(len(data))  # keep the stream flowing but silent
             elif _rms(data) > self.cfg.speech_rms:
                 timer.touch()  # local voice check: Gemini's transcript arrives too late to hold the timer open
