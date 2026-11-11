@@ -1,6 +1,8 @@
 # Stack and audio parameters
 
-- Language/runtime: Python 3 in a venv at `~/gemini-assistant/venv`; deps `google-genai vosk pyaudio python-dotenv` (installed: google-genai 3.0.0, vosk 0.3.45, PyAudio 0.2.14, python-dotenv 1.2.4); system deps `portaudio19-dev libasound2-dev alsa-utils`.
+- Language/runtime: Python 3 in a venv at `~/gemini-assistant/venv`; deps `google-genai vosk pyaudio python-dotenv` (installed: google-genai 3.0.0, vosk 0.3.45, PyAudio 0.2.14, python-dotenv 1.2.4); system deps `portaudio19-dev libasound2-dev alsa-utils espeak-ng` (espeak-ng is optional: spoken error messages; error tones need nothing).
+- Error feedback (`feedback.py`): API/network errors are classified (402/429 credits or quota, 403/1008 auth, 5xx/1011 server, network) and announced with a distinct generated tone pattern plus an espeak-ng message (`FEEDBACK_LANG`, `ERROR_VOICE`). The Live API reports errors as websocket close codes with a reason text; credits-depleted is HTTP 402/429 "prepayment credits are depleted".
+- After the wake chime the app drops `WAKE_SKIP_MS` (600) of mic audio so the wake phrase tail is not sent to Gemini; the idle timer also resets on local mic level (`SPEECH_RMS`).
 - Wake word: Vosk 0.3.x with `vosk-model-small-en-us-0.15` in `~/gemini-assistant/models/`, a `KaldiRecognizer` at 16 kHz with grammar `["hey gemini", "hey assistant", "[unk]"]`; trigger when a final or partial result equals a phrase. Phrase words must be in the model vocabulary (checked: gemini, assistant, hey, jarvis, computer yes; jemini, gimini no). Tune by tightening the grammar or requiring both words.
 - Live API: Gemini Live over WebSocket; input 16 kHz PCM16 mono, output 24 kHz PCM16 mono; voice default Puck (alternatives Charon, Kore, Fenrir, Aoede).
 - Config in `.env`: `GEMINI_API_KEY`, `WAKE_PHRASES` (comma-separated, optional).
