@@ -8,10 +8,11 @@ from typing import Callable
 from . import feedback
 from .audio import generate_chime
 from .config import FRAME_MS, Config
+from .log import log as default_log
 from .session import LiveConversation
 
 
-def wait_for_wake(mic, detector, log: Callable[[str], None] = print) -> str:
+def wait_for_wake(mic, detector, log: Callable[[str], None] = default_log) -> str:
     detector.reset()
     log("[Idle] Say 'Hey Gemini' or 'Hey Assistant' to start")
     while True:
@@ -20,7 +21,7 @@ def wait_for_wake(mic, detector, log: Callable[[str], None] = print) -> str:
             return hit
 
 
-def run_once(cfg: Config, mic, speaker, detector, client_factory, log: Callable[[str], None] = print) -> LiveConversation:
+def run_once(cfg: Config, mic, speaker, detector, client_factory, log: Callable[[str], None] = default_log) -> LiveConversation:
     """One wake -> chime -> conversation cycle. Returns the finished conversation."""
     phrase = wait_for_wake(mic, detector, log)
     log(f"[Active] Heard '{phrase}'")
@@ -34,7 +35,7 @@ def run_once(cfg: Config, mic, speaker, detector, client_factory, log: Callable[
     return conv
 
 
-def run_forever(cfg: Config, mic, speaker, detector, client_factory, log: Callable[[str], None] = print) -> None:
+def run_forever(cfg: Config, mic, speaker, detector, client_factory, log: Callable[[str], None] = default_log) -> None:
     try:
         while True:
             try:
@@ -49,4 +50,4 @@ def run_forever(cfg: Config, mic, speaker, detector, client_factory, log: Callab
                     pass  # the speaker itself may be what failed
                 time.sleep(3)  # avoid a tight error loop, e.g. an unplugged mic
     except KeyboardInterrupt:
-        log("\nStopping.")
+        log("[Status] Stopping")

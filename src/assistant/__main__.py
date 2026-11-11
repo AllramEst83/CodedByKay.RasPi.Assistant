@@ -9,6 +9,7 @@ from . import app
 from .audio import (FakeMic, FakeSpeaker, PyAudioMic, PyAudioSpeaker, StdioMic, StdioSpeaker, list_devices,
                     read_wav_pcm16, write_wav_pcm16)
 from .config import INPUT_RATE, OUTPUT_RATE, ConfigError, load_config
+from .log import log, make_logger
 from .session import make_client
 from .wake import WakeDetector
 
@@ -29,7 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cfg = load_config()
     except ConfigError as e:
-        print(f"Config error: {e}", file=sys.stderr)
+        make_logger(sys.stderr)(f"[Error] Config: {e}")
         return 1
     detector = WakeDetector(cfg.vosk_model_path, cfg.wake_phrases)
     factory = partial(make_client, cfg)
@@ -42,23 +43,21 @@ def main(argv: list[str] | None = None) -> int:
                 conv = app.run_once(cfg, mic, speaker, detector, factory)
             finally:
                 speaker.close()
-            print("Played the reply on the speaker")
+            log("[Status] Played the reply on the speaker")
         else:
             speaker = FakeSpeaker()
             conv = app.run_once(cfg, mic, speaker, detector, factory)
             write_wav_pcm16(args.out, speaker.audio, OUTPUT_RATE)
-            print(f"Saved {len(speaker.audio) / (OUTPUT_RATE * 2):.1f}s of reply audio to {args.out}")
-        print("User said:     ", "".join(conv.transcript["user"]))
-        print("Assistant said:", "".join(conv.transcript["assistant"]))
-        return 0
+            log(f"[Status] Saved {len(speaker.audio) / (OUTPUT_RATE * 2):.1f}s of reply audio to {args.out}")
+        return 0  # what was said is already in the log as [You] / [Gemini] lines
 
-    if args.remote_audio:  # PC bridge: mic PCM on stdin, reply PCM on stdout, logs on stderr
-        log = lambda s: print(s, file=sys.stderr, flush=True)
+    if args.remote_audio:  # PC bridge: mic PCM on stdin, reply PCM on stdout, logs on stderr (colored: a PC terminal shows them)
+        bridge_log = make_logger(sys.stderr, color=True)
         mic, speaker = StdioMic(), StdioSpeaker()
         try:
-            app.run_forever(cfg, mic, speaker, detector, factory, log)
+            app.run_forever(cfg, mic, speaker, detector, factory, bridge_log)
         except EOFError:
-            log("[Status] PC audio bridge disconnected")
+            bridge_log("[Status] PC audio bridge disconnected")
         finally:
             speaker.close()
         return 0
@@ -66,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     mic = PyAudioMic(cfg.audio_in_device)
     speaker = PyAudioSpeaker(cfg.audio_out_device)
     try:
-        app.run_forever(cfg, mic, speaker, detector, factory)
+        app.run_forever(cfg, mic, speaker, detector, factory, log)
     finally:
         mic.close()
         speaker.close()

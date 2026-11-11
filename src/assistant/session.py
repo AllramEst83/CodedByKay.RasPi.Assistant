@@ -11,6 +11,7 @@ from google import genai
 from google.genai import types
 
 from .config import INPUT_RATE, Config
+from .log import log as default_log
 
 
 def make_client(cfg: Config):
@@ -64,7 +65,7 @@ class IdleTimer:
 
 class LiveConversation:
     def __init__(self, cfg: Config, client_factory: Callable[[], Any], mic, speaker,
-                 log: Callable[[str], None] = print, clock: Callable[[], float] = time.monotonic):
+                 log: Callable[[str], None] = default_log, clock: Callable[[], float] = time.monotonic):
         self.cfg = cfg
         self._client_factory = client_factory
         self.mic = mic
@@ -73,6 +74,15 @@ class LiveConversation:
         self._clock = clock
         self.transcript: dict[str, list[str]] = {"user": [], "assistant": []}
         self.last_error: BaseException | None = None  # set when run() ends with "error: ..."
+        self._turn: dict[str, list[str]] = {"user": [], "assistant": []}  # text of the turn in progress, for the log
+
+    def _flush_turn(self) -> None:
+        """Log what was said in the finished (or interrupted) turn."""
+        for who, tag in (("user", "You"), ("assistant", "Gemini")):
+            text = "".join(self._turn[who]).strip()
+            if text:
+                self.log(f"[{tag}] {text}")
+            self._turn[who] = []
 
     async def run(self) -> str:
         """Run until idle timeout or error. Returns 'idle', 'go_away' or 'error: ...'."""
@@ -123,6 +133,7 @@ class LiveConversation:
         finally:
             stop.set()
             await loop.run_in_executor(None, thread.join, 1.0)
+        self._flush_turn()  # anything said in a turn that never completed
         self.log(f"[Status] Live session closed ({reason})")
         return reason
 
@@ -153,6 +164,7 @@ class LiveConversation:
         if getattr(sc, "interrupted", False):
             self.speaker.clear()  # barge-in: stop playback immediately
             timer.touch()
+            self._flush_turn()
             self.log("[Interrupted]")
         model_turn = getattr(sc, "model_turn", None)
         if model_turn is not None:
@@ -164,12 +176,15 @@ class LiveConversation:
         user = getattr(sc, "input_transcription", None)
         if user is not None and getattr(user, "text", None):
             self.transcript["user"].append(user.text)
+            self._turn["user"].append(user.text)
             timer.touch()  # the user is speaking
         bot = getattr(sc, "output_transcription", None)
         if bot is not None and getattr(bot, "text", None):
             self.transcript["assistant"].append(bot.text)
+            self._turn["assistant"].append(bot.text)
         if getattr(sc, "turn_complete", False):
             timer.touch()
+            self._flush_turn()
 
     async def _monitor(self, timer: IdleTimer) -> str:
         while True:

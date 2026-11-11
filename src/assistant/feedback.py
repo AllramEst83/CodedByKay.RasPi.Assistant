@@ -16,6 +16,7 @@ from typing import Callable
 
 from .audio import resample_pcm16
 from .config import OUTPUT_RATE
+from .log import log as default_log
 
 # kind -> (tone pattern as (Hz, seconds) pairs, spoken text per language)
 # Patterns differ in pitch and rhythm so each error is recognisable without the voice.
@@ -109,7 +110,7 @@ def speak(text: str, lang: str = "sv", rate: int = OUTPUT_RATE) -> bytes | None:
 
 
 def announce(kind: str, speaker, lang: str = "sv", voice: bool = True,
-             log: Callable[[str], None] = print) -> None:
+             log: Callable[[str], None] = default_log) -> None:
     """Play the tone pattern for `kind`, then speak the message if espeak-ng is available."""
     kind = kind if kind in KINDS else "unknown"
     text = KINDS[kind][1].get(lang) or KINDS[kind][1]["en"]

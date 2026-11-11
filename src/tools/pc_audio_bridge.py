@@ -12,6 +12,7 @@ makes the assistant hear itself. Ctrl+C stops it.
 from __future__ import annotations
 
 import argparse
+import os
 import queue
 import subprocess
 import sys
@@ -21,6 +22,15 @@ import wave
 from pathlib import Path
 
 MIC_RATE, OUT_RATE, FRAME = 16000, 24000, 640  # 40 ms of 16 kHz samples
+
+if sys.stderr.isatty():
+    os.system("")  # makes the classic Windows console understand ANSI colors
+
+
+def info(msg: str) -> None:
+    """The bridge's own messages, in the same style as the Pi's [Status] lines (cyan)."""
+    color = sys.stderr.isatty() and not os.environ.get("NO_COLOR")
+    print(f"\x1b[36m[Status] {msg}\x1b[0m" if color else f"[Status] {msg}", file=sys.stderr, flush=True)
 
 
 def ssh_command(args) -> list[str]:
@@ -123,7 +133,7 @@ def main() -> int:
     for s in streams:
         s.start()
     threading.Thread(target=reader, daemon=True).start()
-    print("Bridge running. Say 'Hey Gemini' or 'Hey Assistant'. Ctrl+C to stop.", file=sys.stderr)
+    info("Bridge running. Say 'Hey Gemini' or 'Hey Assistant'. Ctrl+C to stop.")
     t0 = time.monotonic()
     try:
         while not stop.is_set() and proc.poll() is None:
@@ -149,7 +159,7 @@ def main() -> int:
             w.setsampwidth(2)
             w.setframerate(OUT_RATE)
             w.writeframes(bytes(reply))
-        print(f"Saved {len(reply) / OUT_RATE / 2:.1f}s of reply audio to {args.to_wav}", file=sys.stderr)
+        info(f"Saved {len(reply) / OUT_RATE / 2:.1f}s of reply audio to {args.to_wav}")
     return 0
 
 

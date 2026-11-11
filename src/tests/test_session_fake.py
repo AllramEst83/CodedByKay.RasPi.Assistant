@@ -119,3 +119,17 @@ def test_connection_error_is_reported_not_raised():
     conv = LiveConversation(CFG, lambda: NS(aio=NS(live=NS(connect=boom))), FakeMic(), FakeSpeaker(), log=lambda s: None)
     reason = asyncio.run(conv.run())
     assert reason.startswith("error: ConnectionError")
+
+
+def test_turns_are_logged_as_you_and_gemini_lines():
+    session = FakeSession([[
+        (0.0, sc(input_transcription=NS(text="Hej "))),
+        (0.0, sc(input_transcription=NS(text="där"))),
+        (0.0, sc(output_transcription=NS(text="Hej på dig!"))),
+        (0.0, sc(turn_complete=True)),
+    ]])
+    lines = []
+    conv = LiveConversation(CFG, factory_for(session), FakeMic(b"\x05\x00" * 4000, speed=50), FakeSpeaker(), log=lines.append)
+    asyncio.run(conv.run())
+    assert "[You] Hej där" in lines and "[Gemini] Hej på dig!" in lines
+    assert lines.index("[You] Hej där") < lines.index("[Gemini] Hej på dig!")

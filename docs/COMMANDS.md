@@ -43,7 +43,19 @@ Daily use:
 
 To leave the live log press **Ctrl+C** (the assistant keeps running). If a pager opens, press **q**.
 
-Useful log lines: `[Idle]` waiting for the wake phrase, `[Active] Heard '...'` wake phrase detected, `[Status] Live session open/closed`, `[Timeout]` idle timeout, `[Feedback] <kind>: ...` an error was announced, `[Error]` the error text.
+Log lines are tagged and colored (in a terminal and in the audio bridge; not in `journalctl`, where escape codes would show as noise, and not when `NO_COLOR` is set; `FORCE_COLOR=1` forces color):
+
+| Tag | Color | Meaning |
+|---|---|---|
+| `[Idle]` | dim grey | waiting for the wake phrase |
+| `[Active]` | bold green | wake phrase heard |
+| `[Status]` | cyan | session opened or closed, system messages |
+| `[You]` | bold blue | what you said (Gemini's transcript of it) |
+| `[Gemini]` | bold magenta | what Gemini answered |
+| `[Interrupted]` | bold yellow | you spoke over a reply (barge-in) |
+| `[Timeout]` | yellow | the 8 s idle timeout ended the session |
+| `[Feedback]` | black on yellow | an error was announced out loud |
+| `[Error]` | white on red | something failed, with the error text |
 
 ## Run it by hand (without the service)
 
