@@ -184,7 +184,7 @@ Settings live in `~/gemini-assistant/.env` on the Pi (permission `600`, never co
 | `BARGE_IN_MARGIN` | `2.0` | gate: how many times louder than the expected echo you must be to interrupt (lower = easier) |
 | `MUTE_TAIL_MS` | `600` | `ECHO_MODE=mute` only: keep ignoring the mic this long after the speaker stops |
 | `MUTE_MIC_WHILE_SPEAKING` | `false` | same as `ECHO_MODE=mute`; use it only if the gate cannot tell your voice from the echo |
-| `SPEECH_RMS` | `500` | mic level that counts as speech for the idle timer; raise it if room noise keeps sessions open |
+| `SPEECH_RMS` | `500` (200 on the Pi) | mic level that counts as speech for the idle timer; raise it if room noise keeps sessions open |
 | `GREETING_EN`, `GREETING_SV` | `Online`, `Ja?` | robot-voice greeting after the wake chime (needs `espeak-ng`); empty text turns that language's greeting off |
 | `GREETING_SPEED` | `115` | greeting speed in words per minute; lower is slower (error messages use 150) |
 | `GREETING_MAP` | `hey gemini:en,hey assistant:en` | which wake phrase gets which greeting language |
@@ -238,6 +238,7 @@ When something goes wrong the Pi plays a tone, then speaks a short message (need
 | No sound | `aplay -l`; set `AUDIO_OUT_DEVICE`; check the speaker's own volume and power |
 | It wakes up on ordinary talk | raise the wake threshold by tightening `WAKE_PHRASES`, or tell the maintainer |
 | It interrupts itself | raise `BARGE_IN_MARGIN` (try 3), move the mic away from the speaker, or `ECHO_MODE=mute` |
+| I cannot interrupt it (no `[Interrupted]` in the log) | set `ECHO_DEBUG=true`, restart, interrupt it and read the `[Gate]` lines. If `mic` stays below `needs`, your voice is too quiet for the gate: raise the mic volume (`amixer -c <card> sset Mic 8`, then `sudo alsactl store` to keep it) and lower `SPEECH_RMS` (200 works with a quiet mic and little echo). Found on the real setup: capture volume was 0 and `SPEECH_RMS=500` was above the voice level |
 | The session ends in the middle of a long question | lower `SPEECH_RMS` or raise `IDLE_TIMEOUT` |
 | Pi's IP changed | `hostname -I` on the Pi, or use `gemini-pi.local` |
 | Reboot or power off the Pi | `sudo reboot` / `sudo shutdown now` (wait for the green light to stop before unplugging) |
