@@ -122,6 +122,7 @@ class LiveConversation:
         self._gate = EchoGate(cfg.speech_rms, cfg.barge_in_margin, tail_s=cfg.mute_tail_ms / 1000,
                               delay_s=getattr(speaker, "playback_delay", 0.0))
         self.mute_mic_during_greeting = False  # set by the app: send silence until the wake greeting has finished playing
+        self._debug_at = 0.0
         self.greeting: str | None = None  # set by the app: the word Gemini says right after connecting ("Yes?")
         self._greeting_started = False  # the greeting's audio has begun to play
         self._greeting_deadline: float | None = None  # stop waiting for it after this
@@ -226,6 +227,11 @@ class LiveConversation:
             gate_ok = True
             if mode == "gate":  # must see every frame, to learn the echo level
                 gate_ok = self._gate.allow(level, self.speaker.level(), now)
+                if self.cfg.echo_debug and busy and now - self._debug_at >= 0.5:
+                    self._debug_at = now
+                    g = self._gate.last
+                    self.log(f"[Gate] mic {level:.0f}  speaker {g.get('ref', 0):.0f}  echo ratio "
+                             f"{g.get('ratio') or 0:.2f}  needs {g.get('threshold', 0):.0f}  -> {'SENT' if gate_ok else 'blocked'}")
             # "mute" mode ignores the mic while speaking and for mute_tail_ms after the last sample (reverb, delays)
             muted = busy or now - self._last_busy < self.cfg.mute_tail_ms / 1000
             if (mode == "mute" and muted) or (self.mute_mic_during_greeting and busy) or not gate_ok:

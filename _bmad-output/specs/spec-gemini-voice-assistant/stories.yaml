@@ -51,3 +51,15 @@
   invoke_dev_with: >-
     Reset the idle timer on user speech as well as model audio; the
     timeout stays a single configurable constant.
+- id: "6"
+  title: Look on demand with a USB webcam (planned)
+  description: >-
+    Add the `look` tool: Gemini asks, the Pi grabs one webcam frame and sends
+    it as a JPEG, Gemini describes it (CAP-10). Full design in look-tool.md.
+  spec_checkpoint: true
+  done_checkpoint: false
+  invoke_dev_with: >-
+    First run the live probe from look-tool.md with the real webcam to find
+    out which SDK call the model accepts an image through; only then build.
+    Capture only while the tool call runs, log every capture, and keep the
+    tool out of the declaration when no camera is present.

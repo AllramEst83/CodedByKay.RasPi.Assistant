@@ -6,7 +6,7 @@ import time
 from typing import Callable
 
 from . import feedback
-from .audio import generate_chime
+from .audio import generate_chime, generate_ready_chime
 from .config import FRAME_MS, Config
 from .log import log as default_log
 from .session import LiveConversation
@@ -88,6 +88,12 @@ def run_once(cfg: Config, mic, speaker, detector, client_factory, log: Callable[
 def run_forever(cfg: Config, mic, speaker, detector, client_factory, log: Callable[[str], None] = default_log) -> None:
     feedback.prewarm_greetings(cfg)
     timers = TimerManager(speaker, cfg, log)  # shared by all conversations: a timer outlives the chat that set it
+    if cfg.ready_chime:
+        try:
+            speaker.play_blocking(generate_ready_chime())  # once per start: "I am up and listening"
+            log("[Status] Ready")
+        except Exception as e:  # noqa: BLE001  a missing speaker must not stop the assistant from listening
+            log(f"[Warn] Could not play the ready chime: {type(e).__name__}: {e}")
     try:
         while True:
             try:

@@ -30,6 +30,7 @@ class EchoGate:
         self._cal: list[float] = []
         self.echo_ratio: float | None = None  # mic level / playback level when only echo is present
         self._hold_until = float("-inf")
+        self.last: dict = {}  # the numbers behind the latest decision, for ECHO_DEBUG
 
     def allow(self, mic_rms: float, ref_rms: float, now: float) -> bool:
         """True if this mic frame should be sent to Gemini. `ref_rms` is the level being written to the speaker now."""
@@ -52,6 +53,7 @@ class EchoGate:
             return False
         threshold = max(self.speech_rms, self.echo_ratio * self._smooth * self.margin)
         loud = mic_rms > threshold
+        self.last = {"ref": self._smooth, "ratio": self.echo_ratio, "threshold": threshold}
         if loud:
             self._hold_until = now + self.hold_s
         allowed = loud or now < self._hold_until

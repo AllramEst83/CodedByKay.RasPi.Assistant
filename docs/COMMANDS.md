@@ -188,6 +188,7 @@ Settings live in `~/gemini-assistant/.env` on the Pi (permission `600`, never co
 | `GREETING_EN`, `GREETING_SV` | `Online`, `Ja?` | robot-voice greeting after the wake chime (needs `espeak-ng`); empty text turns that language's greeting off |
 | `GREETING_SPEED` | `115` | greeting speed in words per minute; lower is slower (error messages use 150) |
 | `GREETING_MAP` | `hey gemini:en,hey assistant:en` | which wake phrase gets which greeting language |
+| `READY_CHIME` | `true` | play a distinct rising four-note arpeggio once when the assistant has started and is waiting for the wake phrase, so you know it is ready after plugging it in (the wake chime is two short notes) |
 | `IDLE_CHIME` | `true` | play the falling chime when a conversation ends by itself after `IDLE_TIMEOUT` seconds of silence ("go to sleep" always plays it) |
 | `FAMILY_CONTEXT` | the Virgin Wiberg family: Kay, Rebecka, Morris, Milton | who the assistant is for, as one line of instructions (kept child-friendly); an empty value removes it. The built-in text is `DEFAULT_FAMILY_CONTEXT` in `config.py` |
 | `GREETING_SOURCE` | `gemini` | who says the wake greeting: `gemini` (Gemini says it, about a second after the chime), `robot` (espeak-ng, instant; uses `GREETING_*` and `GREETING_SPEED`) or `off` |

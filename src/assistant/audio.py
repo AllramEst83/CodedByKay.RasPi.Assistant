@@ -69,6 +69,19 @@ def generate_chime(rate: int = OUTPUT_RATE, descending: bool = False) -> bytes:
     return bytes(out)
 
 
+def generate_ready_chime(rate: int = OUTPUT_RATE) -> bytes:
+    """Played once when the assistant has booted and is waiting for the wake phrase: a brighter, longer rising arpeggio
+    (C5 E5 G5 C6, the last note held and fading) that cannot be mistaken for the wake chime (two short notes)."""
+    out = bytearray()
+    for freq, dur, gain in ((523.25, 0.11, 0.22), (659.25, 0.11, 0.22), (783.99, 0.11, 0.22), (1046.5, 0.45, 0.22)):
+        n = int(rate * dur)
+        for i in range(n):
+            env = math.sin(math.pi * i / n) if dur < 0.2 else math.sin(math.pi * i / n) ** 0.5 * (1 - i / n)
+            tone = math.sin(2 * math.pi * freq * i / rate) + 0.3 * math.sin(4 * math.pi * freq * i / rate)  # a little shimmer
+            out += struct.pack("<h", int(32767 * gain * env * tone / 1.3))
+    return bytes(out)
+
+
 def read_wav_pcm16(path, expect_rate: int) -> bytes:
     with wave.open(str(path), "rb") as w:
         if (w.getnchannels(), w.getsampwidth(), w.getframerate()) != (1, 2, expect_rate):

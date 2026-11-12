@@ -645,3 +645,59 @@ def test_mic_stays_open_until_the_gemini_greeting_starts_and_is_muted_while_it_p
     assert not silent[0]  # open while waiting for the greeting to arrive
     assert any(silent)  # muted while the greeting played
     assert not silent[-1]  # open again afterwards
+
+
+# --- language rule and the ready chime --------------------------------------------------------------------------------
+
+def test_prompt_limits_the_assistant_to_swedish_and_english():
+    from assistant.config import SYSTEM_PROMPT
+
+    assert "only two languages: Swedish and English" in SYSTEM_PROMPT
+    assert "Never reply in any other language" in SYSTEM_PROMPT
+    assert "Jag förstår bara svenska och engelska" in SYSTEM_PROMPT and "I only understand Swedish and English" in SYSTEM_PROMPT
+    assert "assume Swedish or English" in SYSTEM_PROMPT  # imperfect recognition must not make it nag in Swedish
+    assert "Morris" in SYSTEM_PROMPT  # the family context is still there
+
+
+def test_ready_chime_is_distinct_from_the_wake_and_sleep_chimes():
+    from assistant.audio import generate_chime, generate_ready_chime
+
+    ready = generate_ready_chime()
+    assert len(ready) % 2 == 0 and len(ready) > len(generate_chime()) * 2
+    assert ready not in (generate_chime(), generate_chime(descending=True))
+    assert max(abs(int.from_bytes(ready[i:i + 2], "little", signed=True)) for i in range(0, len(ready), 2)) < 32000  # no clipping
+
+
+def _forever_until_stopped(cfg, speaker):
+    class Mic:
+        def read(self):
+            raise KeyboardInterrupt
+
+    class Detector:
+        def reset(self): pass
+        def feed(self, frame): return None
+
+    logs = []
+    app.run_forever(cfg, Mic(), speaker, Detector(), lambda: None, logs.append)  # Mic.read() ends the loop at once
+    return logs
+
+
+def test_ready_chime_plays_once_at_startup():
+    from assistant.audio import generate_ready_chime
+
+    speaker = FakeSpeaker()
+    logs = _forever_until_stopped(CFG, speaker)
+    assert speaker.audio.startswith(generate_ready_chime()) and "[Status] Ready" in logs
+
+
+def test_no_ready_chime_when_turned_off_and_a_broken_speaker_does_not_stop_startup():
+    speaker = FakeSpeaker()
+    _forever_until_stopped(replace(CFG, ready_chime=False), speaker)
+    assert speaker.audio == b""
+
+    class Broken(FakeSpeaker):
+        def play_blocking(self, pcm):
+            raise OSError("no speaker")
+
+    logs = _forever_until_stopped(CFG, Broken())
+    assert any("Could not play the ready chime" in line for line in logs)

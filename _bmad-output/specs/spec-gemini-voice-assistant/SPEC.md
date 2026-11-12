@@ -1,6 +1,6 @@
 ---
 id: SPEC-gemini-voice-assistant
-companions: [pi-setup.md, stack.md]
+companions: [pi-setup.md, stack.md, look-tool.md]
 sources: [../../../docs/plan.md]
 ---
 
@@ -30,14 +30,20 @@ A vision to realize: Kay wants a hands-free, voice-only Gemini assistant on a Ra
   - **intent:** Follow-ups need no wake word while the session is active; after 8 s without speech from either party the session closes and the device returns to idle. Saying "go to sleep" closes it at once (Gemini calls a `go_to_sleep` tool, says a short goodbye, a falling chime plays).
   - **success:** A follow-up within 8 s works without the wake word, and user speech restarts the 8 s window; after 8 s of silence the log shows the session closed and the wake word is required again.
 - **CAP-6**
-  - **intent:** Replies are short, spoken-style and markdown-free, Swedish by default and English when the user speaks English.
-  - **success:** Sampled replies are 1–3 sentences, contain no markdown, and follow the language rule.
+  - **intent:** Replies are short, spoken-style and markdown-free, in Swedish or English only: the language of the question, Swedish when unclear. Speech that sounds like any other language is not answered; the assistant asks, in both languages, for Swedish or English.
+  - **success:** Sampled replies are 1–3 sentences, contain no markdown, and follow the language rule; a question in German or Spanish gets the bilingual request instead of an answer, while accented Swedish is still answered.
 - **CAP-7**
   - **intent:** The Pi is set up and operated entirely headless over SSH from the Windows PC.
   - **success:** From a freshly flashed Pi, a running assistant is reached using only SSH, with no monitor or keyboard on the Pi.
 - **CAP-8**
   - **intent:** The Pi is returned to a known-clean state, discarding the old Docker web-server setup.
   - **success:** After reflash no Docker, containers or old user data remain, and the Pi boots to an SSH-reachable fresh OS.
+- **CAP-9** (done)
+  - **intent:** When the assistant has booted and is waiting for the wake phrase, a distinct rising four-note chime plays once (`READY_CHIME`), so the user knows it is ready after plugging it in.
+  - **success:** The chime plays once per start, after the wake detector and devices are ready and never again on its own; it is clearly different from the two-note wake chime and the falling sleep chime.
+- **CAP-10** (planned, not built: see `look-tool.md`)
+  - **intent:** The user can ask the assistant to look at something ("Hey Gemini, what's this?", "what do I have in my hand?"). Gemini calls a `look` tool, the Pi grabs one frame from a USB webcam and sends it as a JPEG, and Gemini describes it, reads text or identifies things.
+  - **success:** With a webcam attached, holding up an object and asking about it gets a correct spoken description within about 4 s; the camera is used only while that tool call runs, each capture is logged, and without a webcam the assistant says so instead of failing.
 
 ## Constraints
 
@@ -55,7 +61,7 @@ A vision to realize: Kay wants a hands-free, voice-only Gemini assistant on a Ra
 
 - No screen or UI.
 - No multi-room or multi-user support.
-- No custom tool use beyond `go_to_sleep`, and no smart-home control. Google Search grounding (built into the Live API, `GOOGLE_SEARCH`) is allowed so answers can use current facts.
+- No custom tool use beyond `go_to_sleep`, the timer tools and the planned `look` tool (CAP-10), and no smart-home control. Google Search grounding (built into the Live API, `GOOGLE_SEARCH`) is allowed so answers can use current facts.
 - No Docker or web-server role for the Pi.
 - No cloud-based wake-word detection.
 - No vendor-hosted or account-bound wake-word engine (e.g. Picovoice).
@@ -75,5 +81,6 @@ From a freshly flashed Pi, Kay says "Hey Gemini", hears the chime, asks a questi
 
 ## Open Questions
 
+- `look` (CAP-10): does `gemini-3.8-live` accept an image through `send_realtime_input(video=...)`, or must it go through `send_client_content`? Verify live with the webcam before building (see `look-tool.md`).
 - Which USB mic and speaker (or speakerphone) will be bought? Confirm ALSA recognises it and captures at 16 kHz.
 - Vosk false triggers: on 81 synthetic look-alike sentences the plain partial-match detector woke 12 times; confirming each match with a forced final result 200 ms later (`WAKE_CONFIRM_MS`) cut that to 1 with no missed wake phrases (+0.25 s). Synthetic speech is only a proxy: re-measure with real speech (`--wake-test`) and tighten (`WAKE_CONFIRM_MS=500`) or switch engine if needed. Idle CPU is measured and fine: about 5% of one core, 56 °C, no throttling, 203 MB (Pi 5 8 GB, 2026-11-11).
